@@ -8,9 +8,25 @@
 #include <netinet/in.h>
 #include <string.h>
 
+#define SetBit(A,k)     ( A[(k/8)] |= (1 << (k%8)) )
+#define ClearBit(A,k)   ( A[(k/8)] &= ~(1 << (k%8)) )
+#define TestBit(A,k)    ( A[(k/8)] & (1 << (k%8)) )
+
+void print_bits(unsigned char x)
+{
+   int i;
+   for (i = 8 * sizeof(x) - 1; i >= 0; i--)
+   {
+      (x & (1 << i)) ? putchar('1') : putchar('0');
+   }
+   printf("\n");
+}
+
 int port;
 int sampleTime;
 char *typeCom;
+
+char startPacket[3] = {0};
 
 int server_fd, new_socket, valread;
 struct sockaddr_in address;
@@ -72,14 +88,17 @@ void initSocket(){
     }
 }
 
-void creatPacket(){
-    
+char* creatStartPacket(){
+    SetBit(startPacket, 8);
+    printf("%d\n", sampleTime);
+    startPacket[2] = sampleTime;  
 }
 
 int main(int argc, char const *argv[])
 {
     char buffer[1024] = {0};
     char *hello = "Boas mpt";
+    char startArray[3] = {0};
 
     getConfigFile();
     
@@ -88,9 +107,14 @@ int main(int argc, char const *argv[])
     int logState = open("logState.csv", O_CREAT | O_RDWR , 0600);
 
     printf("Port: %d\nSample Time: %d\nType Com: %s\n", port, sampleTime, typeCom);
+    creatStartPacket();
+    for (int i = 0; i < 3; i++)
+    {
+        print_bits(startPacket[i]);
+    }
 
     initSocket();
-
+    
     while(1){
 
     if (listen(server_fd, 3) < 0)
@@ -104,9 +128,10 @@ int main(int argc, char const *argv[])
         perror("accept");
         exit(EXIT_FAILURE);
     }
-    valread = read(new_socket, buffer, 1024);
+
+    //valread = read(new_socket, buffer, 1024);
     printf("Mensagem recebida: %s\n", buffer);
-    //send(new_socket, hello, strlen(hello), 0);
+    send(new_socket, hello, strlen(hello), 0);
     //memset(buffer, '\0' , sizeof(buffer));
     }
     return 0;
