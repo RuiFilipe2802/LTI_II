@@ -2,16 +2,13 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <string.h>
 #include <time.h>
-
-#define SetBit(A, k) (A[(k / 8)] |= (1 << (k % 8)))
-#define ClearBit(A, k) (A[(k / 8)] &= ~(1 << (k % 8)))
-#define TestBit(A, k) (A[(k / 8)] & (1 << (k % 8)))
 
 void print_bits(unsigned char x)
 {
@@ -23,30 +20,23 @@ void print_bits(unsigned char x)
     //printf("\n");
 }
 
-void print_bitsT(unsigned long x)
+void print_bitsT(u_int32_t x)
 {
     int i;
     printf("time:");
     for (i = 8 * sizeof(x) - 1; i >= 0; i--)
     {
         (x & (1 << i)) ? putchar('1') : putchar('0');
+        if (i % 8 == 0)
+        {
+            printf(" ");
+        }
     }
     printf("\n");
 }
 
-int port;
-int sampleTime;
-int sampleFreq;
-char *typeCom;
-
-int server_fd, socket_pc_esp, valread;
-struct sockaddr_in address;
-int opt = 1;
-int addrlen = sizeof(address);
-
-void getConfigFile()
+void getConfigFile(int *port, int *sampleTime, int *sampleFreq, char *typeCom)
 {
-
     int increment = 0;
     int sizeBuf;
     char buf[30];
@@ -64,16 +54,21 @@ void getConfigFile()
             pt = strtok(NULL, ",");
             increment++;
         }
-        port = atoi(arguments[0]);
-        sampleTime = atoi(arguments[1]);
-        sampleFreq = atoi(arguments[2]);
-        typeCom = arguments[3];
+        *port = atoi(arguments[0]);
+        *sampleTime = atoi(arguments[1]);
+        *sampleFreq = atoi(arguments[2]);
+        //typeCom = arguments[3];
+        strcpy(typeCom, arguments[3]);
     }
 }
 
-void initSocket()
+int initSocket(int port)
 {
 
+    int server_fd, socket_pc_esp, valread;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
     // Creating socket file descriptor
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
     {
@@ -99,105 +94,7 @@ void initSocket()
         perror("bind failed");
         exit(EXIT_FAILURE);
     }
-}
-
-void saveTimeStampPacket(char *arr, long long a)
-{
-
-    for (int i = 2; i < 10; i++)
-    {
-        arr[i] = (char)((((long long)a) >> (72 - (8 * i))) & 0xFFu);
-        if (i < 6)
-        {
-            arr[i] = (char)((((long long)a) >> (104 - (8 * i))) & 0xFFu);
-        }
-    }
-
-    printf("char:");
-    for (size_t i = 2; i < 10; i++)
-    {
-        print_bits(arr[i]);
-    }
-    printf("\n");
-}
-
-void creatStartPacket(char *packet, int sampleTime, int sampleFreq)
-{
-    time_t timeStamp;
-    time(&timeStamp);
-    print_bitsT(timeStamp);
-    packet[0] = (char)0;
-    packet[1] = (char)1;
-    saveTimeStampPacket(packet, timeStamp);
-    packet[10] = (char)sampleTime;
-    packet[11] = (char)sampleFreq;
-}
-
-void creatStopPacket(char *packet, int systemId, char stopReason)
-{
-    time_t timeStamp;
-    time(&timeStamp);
-
-    packet[0] = (char)1;
-    packet[1] = (char)systemId;
-    saveTimeStampPacket(packet, timeStamp);
-    packet[6] = stopReason;
-}
-
-void creatErrorPacket(char *packet, int systemId, char errorType)
-{
-    time_t timeStamp;
-    time(&timeStamp);
-
-    packet[0] = (char)3;
-    packet[1] = (char)systemId;
-    saveTimeStampPacket(packet, timeStamp);
-    packet[6] = errorType;
-}
-
-int main(int argc, char const *argv[])
-{
-    int data_from_esp;
-    char *startPacket;
-    char *stopPacket;
-    char *errrotPacket;
-
-    getConfigFile();
-
-    int logError = open("logError.csv", O_CREAT | O_RDWR, 0600);
-    int logSamples = open("logSamples.csv", O_CREAT | O_RDWR, 0600);
-    int logState = open("logState.csv", O_CREAT | O_RDWR, 0600);
-
-    printf("Port: %d\nSample Time: %d\nSample Freq: %d\nType Com: %s\n", port, sampleTime, sampleFreq, typeCom);
-    creatStartPacket(startPacket, sampleTime, sampleFreq);
-    //creatStopPacket(stopPacket, 2, 'A');
-    //creatErrorPacket(errrotPacket, 3, 'B');
-
-    for (int i = 0; i < 12; i++)
-    {
-        print_bits(startPacket[i]);
-    }
-    printf("\n");
-
-    initSocket();
-
     if (listen(server_fd, 3) < 0)
-    {
-        perror("listen");
-        exit(EXIT_FAILURE);
-    }
-    if ((socket_pc_esp = accept(server_fd, (struct sockaddr *)&address,
-                                (socklen_t *)&addrlen)) < 0)
-    {
-        perror("accept");
-        exit(EXIT_FAILURE);
-    }
-
-    send(socket_pc_esp, startPacket, sizeof(char) * 12, 0);
-
-    while (1)
-    {
-        if (listen(server_fd, 3) < 0)
         {
             perror("listen");
             exit(EXIT_FAILURE);
@@ -208,13 +105,110 @@ int main(int argc, char const *argv[])
             perror("accept");
             exit(EXIT_FAILURE);
         }
+        return socket_pc_esp;
+}
 
-        char buffer[1024] = {0};
-        data_from_esp = read(socket_pc_esp, buffer, 1024);
+void saveTimeStampPacket(char *arr, u_int32_t a)
+{
+
+    for (int i = 2; i < 6; ++i)
+    {
+        arr[i] = a & 0xff;
+        a >>= 8;
+    }
+
+    printf("char:");
+    for (size_t i = 2; i < 6; i++)
+    {
+        print_bits(arr[i]);
+        printf(" ");
+    }
+    printf("\n");
+}
+
+void creatStartPacket(char *packet, int sampleTime, int sampleFreq)
+{
+    u_int64_t timeStamp;
+    time(&timeStamp);
+    packet[0] = (char)0;
+    packet[1] = (char)1;
+    saveTimeStampPacket(packet, timeStamp);
+    packet[6] = (char)sampleTime;
+    packet[7] = (char)sampleFreq;
+}
+
+void creatStopPacket(char *packet, int systemId, char stopReason)
+{
+    time_t timeStamp;
+    time(&timeStamp);
+    packet[0] = (char)1;
+    packet[1] = (char)systemId;
+    saveTimeStampPacket(packet, timeStamp);
+    packet[6] = stopReason;
+}
+
+void creatErrorPacket(char *packet, int systemId, char errorType)
+{
+    time_t timeStamp;
+    time(&timeStamp);
+    packet[0] = (char)3;
+    packet[1] = (char)systemId;
+    saveTimeStampPacket(packet, timeStamp);
+    packet[6] = errorType;
+}
+
+int main(int argc, char const *argv[])
+{
+    int data_from_esp;
+    int firsTime = 1;
+    char *startPacket;
+    char *stopPacket;
+    char *errrotPacket;
+    int socket_pc_esp;
+
+    int port;
+    int sampleTime, sampleFreq;
+    char *typeCom;
+
+    getConfigFile(&port, &sampleTime, &sampleFreq, typeCom);
+
+    int logError = open("logError.csv", O_CREAT | O_RDWR, 0600);
+    int logSamples = open("logSamples.csv", O_CREAT | O_RDWR, 0600);
+    int logState = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
+
+    time_t timeStamp;
+    time(&timeStamp);
+    char buf[1024];
+    sprintf(buf, "Started Concentrador: %s", ctime(&timeStamp));
+
+    printf("Port: %d\nSample Time: %d\nSample Freq: %d\nType Com: %s\n", port, sampleTime, sampleFreq, typeCom);
+    creatStartPacket(startPacket, sampleTime, sampleFreq);
+    //creatStopPacket(stopPacket, 2, 'A');
+    //creatErrorPacket(errrotPacket, 3, 'B');
+    write(logState, buf, strlen(buf));
+    close(logState);
+    for (int i = 0; i < 8; i++)
+    {
+        print_bits(startPacket[i]);
+        printf(" ");
+    }
+    printf("\n");
+
+    while (1)
+    {
+        socket_pc_esp = initSocket(port);
+        if (firsTime == 1)
+        {
+            send(socket_pc_esp, startPacket, sizeof(char) * 8, 0);
+            firsTime = 0;
+        }
+        char *data_package;
+        data_from_esp = read(socket_pc_esp, data_package, 1024);
         if (data_from_esp > 0)
         {
-            printf("Data:%s\n", buffer);
+            printf("Data:%s\n", data_package);
         }
     }
+
     return 0;
 }
