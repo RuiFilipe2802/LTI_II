@@ -165,40 +165,39 @@ int main(int argc, char const *argv[])
     char *stopPacket;
     char *errrotPacket;
     int socket_pc_esp;
-
     int port;
-    int sampleTime, sampleFreq;
+    int sampleTime; 
+    int sampleFreq;
     char *typeCom;
-
-    getConfigFile(&port, &sampleTime, &sampleFreq, typeCom);
-
     int logError = open("logError.csv", O_CREAT | O_RDWR, 0600);
     int logSamples = open("logSamples.csv", O_CREAT | O_RDWR, 0600);
     int logState = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
 
+    getConfigFile(&port, &sampleTime, &sampleFreq, typeCom);  
+
     time_t timeStamp;
     time(&timeStamp);
-    char buf[1024];
-    sprintf(buf, "Started Concentrador: %s", ctime(&timeStamp));
+    char bufWritLogSta[1024];
+    sprintf(bufWritLogSta, "Started Concentrador: %s", ctime(&timeStamp));
+    write(logState, bufWritLogSta, strlen(bufWritLogSta));
 
-    printf("Port: %d\nSample Time: %d\nSample Freq: %d\nType Com: %s\n", port, sampleTime, sampleFreq, typeCom);
-    creatStartPacket(startPacket, sampleTime, sampleFreq);
+    //printf("Port: %d\nSample Time: %d\nSample Freq: %d\nType Com: %s\n", port, sampleTime, sampleFreq, typeCom);
     //creatStopPacket(stopPacket, 2, 'A');
     //creatErrorPacket(errrotPacket, 3, 'B');
-    write(logState, buf, strlen(buf));
-    close(logState);
-    for (int i = 0; i < 8; i++)
+
+    /*for (int i = 0; i < 8; i++)
     {
         print_bits(startPacket[i]);
         printf(" ");
     }
-    printf("\n");
+    printf("\n");*/
 
     while (1)
     {
         socket_pc_esp = initSocket(port);
         if (firsTime == 1)
         {
+            creatStartPacket(startPacket, sampleTime, sampleFreq);
             send(socket_pc_esp, startPacket, sizeof(char) * 8, 0);
             firsTime = 0;
         }
@@ -207,6 +206,13 @@ int main(int argc, char const *argv[])
         if (data_from_esp > 0)
         {
             printf("Data:%s\n", data_package);
+            if(data_package[0] == '2'){
+                char iss = data_package[1];
+                printf("ISS:");
+                print_bits(iss);
+                printf("\n");
+            }
+
         }
     }
 
