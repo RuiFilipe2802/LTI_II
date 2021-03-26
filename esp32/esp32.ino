@@ -107,8 +107,8 @@ void loop() {
       Serial.print(dataPacket[t], BIN);
       Serial.print(",");
     }
-  delay(2000);
-  
+    client.write(dataPacket,sizeof(dataPacket));
+  delay(5000);
   /*
   // START COLLECTING SAMPLES
   if(startCollecting == true){
@@ -177,13 +177,9 @@ long getTime(){
   value_lightSensor = analogRead(lightSensor);
   memcpy(pacote,&value_lightSensor, 2);
   Serial.println(value_lightSensor);
-  value_motionSensor = digitalRead(motionSensor);
-  memcpy(pacote + 2,&value_motionSensor, 1);
-  Serial.println(value_motionSensor);
   value_light = digitalRead(light);
-  memcpy(pacote + 3,&value_light, 1);
+  memcpy(pacote + 2,&value_light, 1);
   Serial.println(value_light);
-  
  }
  
  void createDATA(uint8_t *pacote){
