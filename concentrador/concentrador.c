@@ -9,6 +9,9 @@
 #include <netinet/in.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
+#include <arpa/inet.h> //close
+#include <sys/time.h>  //FD_SET, FD_ISSET, FD_ZERO macros
 
 void print_bits(unsigned char x)
 {
@@ -62,52 +65,6 @@ void getConfigFile(int *port, int *sampleTime, int *sampleFreq, char *typeCom)
     }
 }
 
-int initSocket(int port)
-{
-
-    int server_fd, socket_pc_esp, valread;
-    struct sockaddr_in address;
-    int opt = 1;
-    int addrlen = sizeof(address);
-    // Creating socket file descriptor
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
-    {
-        perror("socket failed");
-        exit(EXIT_FAILURE);
-    }
-
-    // Forcefully attaching socket to the port 8080
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | 15,
-                   &opt, sizeof(opt)))
-    {
-        perror("setsockopt");
-        exit(EXIT_FAILURE);
-    }
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(port);
-
-    // Forcefully attaching socket to the port 8080
-    if (bind(server_fd, (struct sockaddr *)&address,
-             sizeof(address)) < 0)
-    {
-        perror("bind failed");
-        exit(EXIT_FAILURE);
-    }
-    if (listen(server_fd, 3) < 0)
-        {
-            perror("listen");
-            exit(EXIT_FAILURE);
-        }
-        if ((socket_pc_esp = accept(server_fd, (struct sockaddr *)&address,
-                                    (socklen_t *)&addrlen)) < 0)
-        {
-            perror("accept");
-            exit(EXIT_FAILURE);
-        }
-        return socket_pc_esp;
-}
-
 void saveTimeStampPacket(char *arr, u_int32_t a)
 {
 
@@ -116,14 +73,6 @@ void saveTimeStampPacket(char *arr, u_int32_t a)
         arr[i] = a & 0xff;
         a >>= 8;
     }
-
-    printf("char:");
-    for (size_t i = 2; i < 6; i++)
-    {
-        print_bits(arr[i]);
-        printf(" ");
-    }
-    printf("\n");
 }
 
 void creatStartPacket(char *packet, int sampleTime, int sampleFreq)
@@ -159,21 +108,25 @@ void creatErrorPacket(char *packet, int systemId, char errorType)
 
 int main(int argc, char const *argv[])
 {
-    int data_from_esp;
     int firsTime = 1;
-    char *startPacket;
+    char startPacket[8];
     char *stopPacket;
     char *errrotPacket;
-    int socket_pc_esp;
+    char *dataPacket;
     int port;
-    int sampleTime; 
+    int sampleTime;
     int sampleFreq;
     char *typeCom;
     int logError = open("logError.csv", O_CREAT | O_RDWR, 0600);
     int logSamples = open("logSamples.csv", O_CREAT | O_RDWR, 0600);
     int logState = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
 
-    getConfigFile(&port, &sampleTime, &sampleFreq, typeCom);  
+    int opt = 1;
+    int socket_pc_esp, addrlen, new_socket, client_socket[30],
+        max_clients = 30, activity, i, valread, sd;
+    int max_sd;
+    struct sockaddr_in address;
+    getConfigFile(&port, &sampleTime, &sampleFreq, typeCom);
 
     time_t timeStamp;
     time(&timeStamp);
@@ -184,37 +137,203 @@ int main(int argc, char const *argv[])
     //printf("Port: %d\nSample Time: %d\nSample Freq: %d\nType Com: %s\n", port, sampleTime, sampleFreq, typeCom);
     //creatStopPacket(stopPacket, 2, 'A');
     //creatErrorPacket(errrotPacket, 3, 'B');
+    //set of socket descriptors
+    fd_set readfds;
 
-    /*for (int i = 0; i < 8; i++)
+    //a message
+    //initialise all client_socket[] to 0 so not checked
+    for (i = 0; i < max_clients; i++)
     {
-        print_bits(startPacket[i]);
-        printf(" ");
+        client_socket[i] = 0;
     }
-    printf("\n");*/
 
-    while (1)
+    //create a master socket
+    if ((socket_pc_esp = socket(AF_INET, SOCK_STREAM, 0)) == 0)
     {
-        socket_pc_esp = initSocket(port);
-        if (firsTime == 1)
+        perror("socket failed");
+        exit(EXIT_FAILURE);
+    }
+
+    //set master socket to allow multiple connections ,
+    //this is just a good habit, it will work without this
+    if (setsockopt(socket_pc_esp, SOL_SOCKET, SO_REUSEADDR, (char *)&opt,
+                   sizeof(opt)) < 0)
+    {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+
+    //type of socket created
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+
+    //bind the socket to localhost port 8888
+    if (bind(socket_pc_esp, (struct sockaddr *)&address, sizeof(address)) < 0)
+    {
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }
+    printf("Listener on port %d \n", port);
+
+    //try to specify maximum of 3 pending connections for the master socket
+    if (listen(socket_pc_esp, 3) < 0)
+    {
+        perror("listen");
+        exit(EXIT_FAILURE);
+    }
+
+    //accept the incoming connection
+    addrlen = sizeof(address);
+    puts("Waiting for connections ...");
+
+    pid_t menu;
+
+    if (menu = fork() == 0)
+    {
+        printf("Bem vindo\n");
+    }
+    else
+    {
+
+        while (1)
         {
-            creatStartPacket(startPacket, sampleTime, sampleFreq);
-            send(socket_pc_esp, startPacket, sizeof(char) * 8, 0);
-            firsTime = 0;
-        }
-        char *data_package;
-        data_from_esp = read(socket_pc_esp, data_package, 1024);
-        if (data_from_esp > 0)
-        {
-            printf("Data:%s\n", data_package);
-            if(data_package[0] == '2'){
-                char iss = data_package[1];
-                printf("ISS:");
-                print_bits(iss);
-                printf("\n");
+
+            //clear the socket set
+            FD_ZERO(&readfds);
+
+            //add master socket to set
+            FD_SET(socket_pc_esp, &readfds);
+            max_sd = socket_pc_esp;
+            //add child sockets to set
+            for (i = 0; i < max_clients; i++)
+            {
+                //socket descriptor
+                sd = client_socket[i];
+
+                //if valid socket descriptor then add to read list
+                if (sd > 0)
+                    FD_SET(sd, &readfds);
+
+                //highest file descriptor number, need it for the select function
+                if (sd > max_sd)
+                    max_sd = sd;
             }
 
-        }
-    }
+            //wait for an activity on one of the sockets , timeout is NULL ,
+            //so wait indefinitely
+            activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
 
-    return 0;
+            if ((activity < 0) && (errno != EINTR))
+            {
+                printf("select error");
+            }
+
+            //If something happened on the master socket ,
+            //then its an incoming connection
+            if (FD_ISSET(socket_pc_esp, &readfds))
+            {
+                if ((new_socket = accept(socket_pc_esp,
+                                         (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0)
+                {
+                    perror("accept");
+                    exit(EXIT_FAILURE);
+                }
+                if (firsTime == 1)
+                {
+                    creatStartPacket(startPacket, sampleTime, sampleFreq);
+                    send(new_socket, startPacket, sizeof(char) * 8, 0);
+                    firsTime = 0;
+                }
+
+                //add new socket to array of sockets
+                for (i = 0; i < max_clients; i++)
+                {
+                    //if position is empty
+
+                    if (client_socket[i] == 0)
+                    {
+                        client_socket[i] = new_socket;
+                        //printf("Adding to list of sockets as %d\n", i);
+
+                        break;
+                    }
+                }
+            }
+            //else its some IO operation on some other socket
+            for (i = 0; i < max_clients; i++)
+            {
+                sd = client_socket[i];
+
+                if (FD_ISSET(sd, &readfds))
+                {
+                    //Check if it was for closing , and also read the
+                    //incoming message
+                    if ((valread = read(sd, dataPacket, 512)) == 0)
+                    {
+
+                        //Somebody disconnected , get his details and print
+                        getpeername(sd, (struct sockaddr *)&address,
+                                    (socklen_t *)&addrlen);
+                        //printf("Host disconnected , ip %s , port %d \n",
+                        //     inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+
+                        //Close the socket and mark as 0 in list for reuse
+                        close(sd);
+                        client_socket[i] = 0;
+                    }
+                    //Echo back the message that came in
+                    else
+                    {
+                        //set the string terminating NULL byte on the end
+                        //of the data read
+
+                        if (dataPacket[0] == 2)
+                        {
+                            char iss = dataPacket[1];
+                            printf("----------------------");
+                            printf("\nISS: %d", (int)iss);
+                            printf("\n");
+                            time_t timeStamp = 0;
+                            memcpy(&timeStamp, dataPacket + 2, 4);
+                            printf("%s", ctime(&timeStamp));
+                            int light_value = (int)dataPacket[8];
+                            int ldr_value = 0;
+                            memcpy(&ldr_value, dataPacket + 6, 2);
+                            printf("LDR :%d\n", ldr_value);
+                            if (light_value == 1)
+                            {
+                                printf("LIGHT ON\n");
+                            }
+                            else
+                            {
+                                printf("LIGHT OFF\n");
+                            }
+                            printf("----------------------\n");
+                            sprintf(bufWritLogSta, "%d , %d, %d, %s", (int)iss, ldr_value, light_value, ctime(&timeStamp));
+                            write(logSamples, bufWritLogSta, strlen(bufWritLogSta));
+                        }
+                        if (dataPacket[0] == 3)
+                        {
+                            char iss = dataPacket[1];
+                            printf("----------------------");
+                            printf("\nISS: %d", (int)iss);
+                            printf("\n");
+                            time_t timeStamp = 0;
+                            memcpy(&timeStamp, dataPacket + 2, 4);
+                            printf("%s", ctime(&timeStamp));
+                            int mov_value = (int)dataPacket[6];
+                            if (mov_value == 1)
+                            {
+                                printf("Movement detected\n");
+                            }
+                            printf("----------------------\n");
+                        }
+                        dataPacket[valread] = '\0';
+                    }
+                }
+            }
+        }
+        return 0;
+    }
 }
