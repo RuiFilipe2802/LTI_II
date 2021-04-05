@@ -1,27 +1,28 @@
-#include <WiFi.h>
 #include <NTPClient.h>
+#include <WiFi.h>
 #include <WiFiUdp.h>
 #include <time.h>
+#include <SPI.h>
 
 #define timeSeconds 1
 #define MAX 512
 #define MAXMOV 7
-#define ID 1
+#define ISS 1
 #define DATAPACKETEMPTY 6
 
 WiFiClient client;
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP);
+WiFiUDP udp;
+NTPClient timeClient(udp);
 
 const int light = 16;
 const int led = 25;
 const int motionSensor = 18;
 const int lightSensor = 32;
 
-const char* ssid = "MEO-CASA";
-const char* password = "10203040";
+const char *ssid = "MEO-CASA";
+const char *password = "10203040";
 const uint16_t port = 8080;
-const char * host = "192.168.1.119";
+const char *host = "192.168.1.119";
 int value_light = 0;
 int value_lightSensor = 0;
 int value_motionSensor = 0;
@@ -29,9 +30,11 @@ int increment = 0;
 boolean startCollecting = false;
 boolean startTimer = false;
 unsigned long previousMillis = 0;
+unsigned long prevMillis = 0;
 
 int sampleTime;
 int sampleFreq;
+int counter = 0;
 
 unsigned long current = millis();
 unsigned long lastTrigger = 0;
@@ -39,16 +42,13 @@ unsigned long lastTrigger = 0;
 uint8_t dataPacket[MAX];
 uint8_t movPacket[MAXMOV];
 
-void print_bitsT(unsigned long x)
-{
+void print_bitsT(unsigned long x) {
   int i;
-  for (i = 8 * sizeof(x) - 1; i >= 0; i--)
-  {
+  for (i = 8 * sizeof(x) - 1; i >= 0; i--) {
     (x & (1 << i)) ? putchar('1') : putchar('0');
   }
   printf("\n");
 }
-
 
 void IRAM_ATTR detectsMovement() {
   Serial.println("MOTION DETECTED!!!");
@@ -68,9 +68,10 @@ void setup() {
     Serial.println("...");
   }
   Serial.print("WiFi connected with IP: ");
-  Serial.println("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
   Serial.println(WiFi.localIP());
+  Serial.println("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
   timeClient.begin();
+  //timeClient.setTimeOffset(3600);
   pinMode(motionSensor, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(motionSensor), detectsMovement, RISING);
   pinMode(light, OUTPUT);
@@ -80,7 +81,9 @@ void setup() {
 }
 
 void loop() {
+  String packetRec;
   unsigned long currentMillis = millis();
+  unsigned long curMillis = millis();
   current = millis();
   if (!client.connect(host, port)) {
     Serial.println("Connection to host failed");
@@ -88,57 +91,63 @@ void loop() {
     return;
   }
   // MOTION STOP
-  if (startTimer && (current - lastTrigger > (timeSeconds * 1000))) {
-    createDATA(movPacket, 3);
-    movPacket[6] = 1;
-    client.write(movPacket, sizeof(movPacket));
-    client.stop();
-    Serial.println("Motion stopped...");
-    digitalWrite(led, LOW);
-    startTimer = false;
+  if (startCollecting == true) {
+    if (startTimer && (current - lastTrigger > (timeSeconds * 1000))) {
+      samplesMov();
+    }
+
+    if (currentMillis - previousMillis >= (sampleTime/sampleFreq)*1000) {
+      printf("*******     %d    ********", sampleTime*1000);
+      samplesLDR(currentMillis, counter);
+      counter += 3;
+    }
+    if (curMillis - prevMillis >= (sampleTime)*1000){
+      client.write(dataPacket, sizeof(dataPacket));
+      client.stop();
+      prevMillis = curMillis;
+      counter = 0;
+    }
   }
   digitalWrite(light, HIGH);
-  //TRAMA START
-  String startPacket;
-  if (!client.available() && startCollecting == false) {
-    startPacket = client.readString();
-    getStart(startPacket);
+  if (client.connected()){
+    packetRec = client.readString();
+    Serial.println(packetRec);
+    if (packetRec[1] == ISS) {
+      switch (packetRec[0]) {
+        case 0:    // START
+          getStart(packetRec);
+          printf("START PACKET");
+          break;
+        case 1:    // STOP
+          getStop(packetRec);
+          printf("STOP PACKET");
+          break;
+      }
+    }
   }
-  if (currentMillis - previousMillis >= 10000) {
-    if (startCollecting == true) {
-      createDATA(dataPacket, 2);
-      //Serial.println(dataPacket, BIN);
-      //printf("%d\n", dataPacket);
-    }
-    insertValuesDataPacket(dataPacket + DATAPACKETEMPTY);
-    //for(int t=0;t<MAX;t++){
-    for (int t = 0; t < 10; t++) {
-      Serial.print(dataPacket[t], BIN);
-      Serial.print(",");
-    }
-    printf("\n");
-    client.write(dataPacket, sizeof(dataPacket));
-    client.stop();
-    previousMillis = currentMillis;
+}
+
+void samplesMov() {
+  createDATA(movPacket, 3);
+  movPacket[6] = 1;
+  client.write(movPacket, sizeof(movPacket));
+  client.stop();
+  Serial.println("Motion stopped...");
+  digitalWrite(led, LOW);
+  startTimer = false;
+}
+
+void samplesLDR(unsigned long currentMillis, int counter) {
+  createDATA(dataPacket, 2);
+  insertValuesDataPacket(counter);
+  printf("|||||||||||||||||||%d\n",DATAPACKETEMPTY + counter);
+  // for(int t=0;t<MAX;t++){
+  for (int t = 0; t < 25; t++) {
+    Serial.print(dataPacket[t], BIN);
+    Serial.print(",");
   }
-  //delay(5000);
-  /*
-    // START COLLECTING SAMPLES
-    if(startCollecting == true){
-    int value_lightSensor = analogRead(32);
-    value_motionSensor = digitalRead(motionSensor);  // read input value
-    Serial.print("MOTION SENSOR -> ");
-    Serial.println(value_motionSensor);
-    Serial.print("LUMINOSIDADE     ");
-    Serial.println(value_lightSensor);
-    delay(500);
-    if(value_lightSensor == 0){
-    digitalWrite(led, HIGH);  // turn LED ON
-    }else{
-    digitalWrite(led, LOW);  // turn LED OFF
-    }
-    }
-    delay(1000);*/
+  printf("\n");
+  previousMillis = currentMillis;
 }
 
 long getTime() {
@@ -148,9 +157,9 @@ long getTime() {
   // The formattedDate comes with the following format:
   // 2018-05-28T16:00:13Z
   // We need to extract date and time
-  //formattedDate = timeClient.getFormattedDate();
-  //Serial.println(formattedDate);
-  time_t epcohTime =  timeClient.getEpochTime();
+  // formattedDate = timeClient.getFormattedDate();
+  // Serial.println(formattedDate);
+  time_t epcohTime = timeClient.getEpochTime();
   Serial.println(ctime(&epcohTime));
   return epcohTime;
   /*// Extract date
@@ -170,34 +179,47 @@ void getStart(String startPacket) {
   char timeStamp[4];
   for (int i = 0; i < 8; i++) {
     Serial.println(startPacket[i], BIN);
-    startCollecting = true;
   }
-  Serial.println("------------");
   for (int j = 0; j < 4; j++) {
     timeStamp[j] = startPacket[j + 2];
     Serial.println(timeStamp[j], BIN);
   }
   memcpy(&curTime, timeStamp, 4);
   Serial.println(ctime(&curTime));
-  sampleTime = (int)(startPacket[6]);
-  sampleFreq = (int)(startPacket[7]);
-  Serial.println(sampleTime);
+  sampleFreq = (int)(startPacket[6]);
+  sampleTime = (int)(startPacket[7]);
   Serial.println(sampleFreq);
-
+  Serial.println(sampleTime);
+  startCollecting = true;
 }
 
-void insertValuesDataPacket(uint8_t *pacote) {
+void getStop(String startPacket){
+  time_t curTime = 0;
+  char timeStamp[4];
+  for (int i = 0; i < 8; i++) {
+    Serial.println(startPacket[i], BIN);
+  }
+  for (int j = 0; j < 4; j++) {
+    timeStamp[j] = startPacket[j + 2];
+    Serial.println(timeStamp[j], BIN);
+  }
+  memcpy(&curTime, timeStamp, 4);
+  Serial.println(ctime(&curTime));
+}
+
+void insertValuesDataPacket(int counter) {
   value_lightSensor = analogRead(lightSensor);
-  memcpy(pacote, &value_lightSensor, 2);
+  memcpy(dataPacket + DATAPACKETEMPTY + counter, &value_lightSensor, 2);
   Serial.println(value_lightSensor);
+  value_lightSensor = 50;
   value_light = digitalRead(light);
-  memcpy(pacote + 2, &value_light, 1);
+  memcpy(dataPacket + DATAPACKETEMPTY + counter+2, &value_light, 1);
   Serial.println(value_light);
 }
 
 void createDATA(uint8_t *pacote, uint8_t iss) {
   pacote[0] = (uint8_t)iss;
-  uint8_t id = ID;
+  uint8_t id = ISS;
   memcpy(pacote + 1, &id, 1);
   time_t timeSample = getTime();
   memcpy(pacote + 2, &timeSample, 4);
