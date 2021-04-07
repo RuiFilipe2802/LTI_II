@@ -35,6 +35,7 @@ unsigned long prevMillis = 0;
 int sampleTime;
 int sampleFreq;
 int counter = 0;
+int nSamples = 0;
 
 unsigned long current = millis();
 unsigned long lastTrigger = 0;
@@ -82,36 +83,38 @@ void setup() {
 
 void loop() {
   String packetRec;
-  unsigned long currentMillis = millis();
-  unsigned long curMillis = millis();
-  current = millis();
   if (!client.connect(host, port)) {
     Serial.println("Connection to host failed");
     delay(1000);
     return;
   }
+
   // MOTION STOP
   if (startCollecting == true) {
+    unsigned long currentMillis = millis();
+    unsigned long curMillis = millis();
+    current = millis();
     if (startTimer && (current - lastTrigger > (timeSeconds * 1000))) {
       samplesMov();
     }
 
-    if (currentMillis - previousMillis >= (sampleTime/sampleFreq)*1000) {
-      printf("*******     %d    ********", sampleTime*1000);
+    if (currentMillis - previousMillis >= (sampleTime / sampleFreq) * 1000) {
       samplesLDR(currentMillis, counter);
       counter += 3;
+      nSamples++;
     }
-    if (curMillis - prevMillis >= (sampleTime)*1000){
+    printf("%d\n", curMillis - prevMillis);
+    if (nSamples == 5) {
       client.write(dataPacket, sizeof(dataPacket));
       client.stop();
+      nSamples = 0;
       prevMillis = curMillis;
       counter = 0;
     }
   }
-  digitalWrite(light, HIGH);
-  if (client.connected()){
+  //digitalWrite(light, HIGH);
+  if (client.connected()) {
     packetRec = client.readString();
-    Serial.println(packetRec);
     if (packetRec[1] == ISS) {
       switch (packetRec[0]) {
         case 0:    // START
@@ -121,6 +124,10 @@ void loop() {
         case 1:    // STOP
           getStop(packetRec);
           printf("STOP PACKET");
+          break;
+        case 4:    // LIGHT
+          getLight(packetRec);
+          printf("LIGHT PACKET");
           break;
       }
     }
@@ -140,7 +147,6 @@ void samplesMov() {
 void samplesLDR(unsigned long currentMillis, int counter) {
   createDATA(dataPacket, 2);
   insertValuesDataPacket(counter);
-  printf("|||||||||||||||||||%d\n",DATAPACKETEMPTY + counter);
   // for(int t=0;t<MAX;t++){
   for (int t = 0; t < 25; t++) {
     Serial.print(dataPacket[t], BIN);
@@ -193,7 +199,7 @@ void getStart(String startPacket) {
   startCollecting = true;
 }
 
-void getStop(String startPacket){
+void getStop(String startPacket) {
   time_t curTime = 0;
   char timeStamp[4];
   for (int i = 0; i < 8; i++) {
@@ -205,6 +211,29 @@ void getStop(String startPacket){
   }
   memcpy(&curTime, timeStamp, 4);
   Serial.println(ctime(&curTime));
+  startCollecting = false;
+}
+
+void getLight(String lightPacket){
+  time_t curTime = 0;
+  char timeStamp[4];
+  printf("^^^^");
+  for (int i = 0; i < 7; i++) {
+    Serial.println(lightPacket[i], BIN);
+  }
+  for (int j = 0; j < 4; j++) {
+    timeStamp[j] = lightPacket[j + 2];
+    Serial.println(timeStamp[j], BIN);
+  }
+  memcpy(&curTime, timeStamp, 4);
+  Serial.println(ctime(&curTime));
+  if(lightPacket[6] == 0){
+    digitalWrite(light, LOW);
+  }
+  if(lightPacket[6] == 1){
+    digitalWrite(light, HIGH);
+  }
+  Serial.println(lightPacket[6], BIN);
 }
 
 void insertValuesDataPacket(int counter) {
@@ -213,7 +242,7 @@ void insertValuesDataPacket(int counter) {
   Serial.println(value_lightSensor);
   value_lightSensor = 50;
   value_light = digitalRead(light);
-  memcpy(dataPacket + DATAPACKETEMPTY + counter+2, &value_light, 1);
+  memcpy(dataPacket + DATAPACKETEMPTY + counter + 2, &value_light, 1);
   Serial.println(value_light);
 }
 
