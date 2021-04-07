@@ -12,6 +12,8 @@
 #include <errno.h>
 #include <arpa/inet.h> //close
 #include <sys/time.h>  //FD_SET, FD_ISSET, FD_ZERO macros
+#include <pthread.h>
+
 
 void print_bits(unsigned char x)
 {
@@ -86,6 +88,16 @@ void creatStartPacket(char *packet, int sampleTime, int sampleFreq)
     packet[7] = (char)sampleFreq;
 }
 
+void creatLightPacket(char *packet, char ledState)
+{
+    u_int64_t timeStamp;
+    time(&timeStamp);
+    packet[0] = (char)4;
+    packet[1] = (char)1;
+    saveTimeStampPacket(packet, timeStamp);
+    packet[6] = ledState;
+}
+
 void creatStopPacket(char *packet, int systemId, char stopReason)
 {
     time_t timeStamp;
@@ -108,10 +120,14 @@ void creatErrorPacket(char *packet, int systemId, char errorType)
 
 int main(int argc, char const *argv[])
 {
+    
     int firsTime = 1;
+    int stop = 0;
+    int light = 0;
     char startPacket[8];
-    char *stopPacket;
-    char *errrotPacket;
+    char lightPacket[7];
+    char stopPacket[7];
+    char *errorPacket;
     char *dataPacket;
     int port;
     int sampleTime;
@@ -139,6 +155,9 @@ int main(int argc, char const *argv[])
     //creatErrorPacket(errrotPacket, 3, 'B');
     //set of socket descriptors
     fd_set readfds;
+
+    //MENU
+
 
     //a message
     //initialise all client_socket[] to 0 so not checked
@@ -187,153 +206,166 @@ int main(int argc, char const *argv[])
     addrlen = sizeof(address);
     puts("Waiting for connections ...");
 
-    pid_t menu;
-
-    if (menu = fork() == 0)
-    {
-        printf("Bem vindo\n");
-    }
-    else
+    while (1)
     {
 
-        while (1)
+        //clear the socket set
+        FD_ZERO(&readfds);
+
+        //add master socket to set
+        FD_SET(socket_pc_esp, &readfds);
+        max_sd = socket_pc_esp;
+        //add child sockets to set
+        for (i = 0; i < max_clients; i++)
         {
+            //socket descriptor
+            sd = client_socket[i];
 
-            //clear the socket set
-            FD_ZERO(&readfds);
+            //if valid socket descriptor then add to read list
+            if (sd > 0)
+                FD_SET(sd, &readfds);
 
-            //add master socket to set
-            FD_SET(socket_pc_esp, &readfds);
-            max_sd = socket_pc_esp;
-            //add child sockets to set
+            //highest file descriptor number, need it for the select function
+            if (sd > max_sd)
+                max_sd = sd;
+        }
+
+        //wait for an activity on one of the sockets , timeout is NULL ,
+        //so wait indefinitely
+        activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
+
+        if ((activity < 0) && (errno != EINTR))
+        {
+            printf("select error");
+        }
+
+        //If something happened on the master socket ,
+        //then its an incoming connection
+        if (FD_ISSET(socket_pc_esp, &readfds))
+        {
+            if ((new_socket = accept(socket_pc_esp,
+                                     (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0)
+            {
+                perror("accept");
+                exit(EXIT_FAILURE);
+            }
+            if (firsTime == 1)
+            {
+                creatStartPacket(startPacket, sampleTime, sampleFreq);
+                send(new_socket, startPacket, sizeof(char) * 8, 0);
+                firsTime = 0;
+            }
+
+            if(light == 2){
+                creatLightPacket(lightPacket, 1);
+                send(new_socket, lightPacket, sizeof(char) * 7, 0);
+                printf("LAMPADA ON\n");
+            }
+
+            /*if (stop == 4)
+            {
+                creatStopPacket(stopPacket, 1, 'a');
+                send(new_socket, stopPacket, sizeof(char) * 7, 0);
+                printf("Stop enviado\n");
+                stop = 0;
+            }*/
+
+            //add new socket to array of sockets
             for (i = 0; i < max_clients; i++)
             {
-                //socket descriptor
-                sd = client_socket[i];
+                //if position is empty
 
-                //if valid socket descriptor then add to read list
-                if (sd > 0)
-                    FD_SET(sd, &readfds);
-
-                //highest file descriptor number, need it for the select function
-                if (sd > max_sd)
-                    max_sd = sd;
-            }
-
-            //wait for an activity on one of the sockets , timeout is NULL ,
-            //so wait indefinitely
-            activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
-
-            if ((activity < 0) && (errno != EINTR))
-            {
-                printf("select error");
-            }
-
-            //If something happened on the master socket ,
-            //then its an incoming connection
-            if (FD_ISSET(socket_pc_esp, &readfds))
-            {
-                if ((new_socket = accept(socket_pc_esp,
-                                         (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0)
+                if (client_socket[i] == 0)
                 {
-                    perror("accept");
-                    exit(EXIT_FAILURE);
-                }
-                if (firsTime == 1)
-                {
-                    creatStartPacket(startPacket, sampleTime, sampleFreq);
-                    send(new_socket, startPacket, sizeof(char) * 8, 0);
-                    firsTime = 0;
-                }
+                    client_socket[i] = new_socket;
+                    //printf("Adding to list of sockets as %d\n", i);
 
-                //add new socket to array of sockets
-                for (i = 0; i < max_clients; i++)
-                {
-                    //if position is empty
-
-                    if (client_socket[i] == 0)
-                    {
-                        client_socket[i] = new_socket;
-                        //printf("Adding to list of sockets as %d\n", i);
-
-                        break;
-                    }
-                }
-            }
-            //else its some IO operation on some other socket
-            for (i = 0; i < max_clients; i++)
-            {
-                sd = client_socket[i];
-
-                if (FD_ISSET(sd, &readfds))
-                {
-                    //Check if it was for closing , and also read the
-                    //incoming message
-                    if ((valread = read(sd, dataPacket, 512)) == 0)
-                    {
-
-                        //Somebody disconnected , get his details and print
-                        getpeername(sd, (struct sockaddr *)&address,
-                                    (socklen_t *)&addrlen);
-                        //printf("Host disconnected , ip %s , port %d \n",
-                        //     inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-
-                        //Close the socket and mark as 0 in list for reuse
-                        close(sd);
-                        client_socket[i] = 0;
-                    }
-                    //Echo back the message that came in
-                    else
-                    {
-                        //set the string terminating NULL byte on the end
-                        //of the data read
-
-                        if (dataPacket[0] == 2)
-                        {
-                            char iss = dataPacket[1];
-                            printf("----------------------");
-                            printf("\nISS: %d", (int)iss);
-                            printf("\n");
-                            time_t timeStamp = 0;
-                            memcpy(&timeStamp, dataPacket + 2, 4);
-                            printf("%s", ctime(&timeStamp));
-                            int light_value = (int)dataPacket[8];
-                            int ldr_value = 0;
-                            memcpy(&ldr_value, dataPacket + 6, 2);
-                            printf("LDR :%d\n", ldr_value);
-                            if (light_value == 1)
-                            {
-                                printf("LIGHT ON\n");
-                            }
-                            else
-                            {
-                                printf("LIGHT OFF\n");
-                            }
-                            printf("----------------------\n");
-                            sprintf(bufWritLogSta, "%d , %d, %d, %s", (int)iss, ldr_value, light_value, ctime(&timeStamp));
-                            write(logSamples, bufWritLogSta, strlen(bufWritLogSta));
-                        }
-                        if (dataPacket[0] == 3)
-                        {
-                            char iss = dataPacket[1];
-                            printf("----------------------");
-                            printf("\nISS: %d", (int)iss);
-                            printf("\n");
-                            time_t timeStamp = 0;
-                            memcpy(&timeStamp, dataPacket + 2, 4);
-                            printf("%s", ctime(&timeStamp));
-                            int mov_value = (int)dataPacket[6];
-                            if (mov_value == 1)
-                            {
-                                printf("Movement detected\n");
-                            }
-                            printf("----------------------\n");
-                        }
-                        dataPacket[valread] = '\0';
-                    }
+                    break;
                 }
             }
         }
-        return 0;
+        //else its some IO operation on some other socket
+        for (i = 0; i < max_clients; i++)
+        {
+            sd = client_socket[i];
+
+            if (FD_ISSET(sd, &readfds))
+            {
+                //Check if it was for closing , and also read the
+                //incoming message
+                if ((valread = read(sd, dataPacket, 512)) == 0)
+                {
+
+                    //Somebody disconnected , get his details and print
+                    getpeername(sd, (struct sockaddr *)&address,
+                                (socklen_t *)&addrlen);
+                    //printf("Host disconnected , ip %s , port %d \n",
+                    //     inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+
+                    //Close the socket and mark as 0 in list for reuse
+                    close(sd);
+                    client_socket[i] = 0;
+                }
+                //Echo back the message that came in
+                else
+                {
+                    //set the string terminating NULL byte on the end
+                    //of the data read
+
+                    if (dataPacket[0] == 2)
+                    {
+                        stop++;
+                        light++;
+                        char iss = dataPacket[1];
+                        printf("----------------------");
+                        printf("\nISS: %d", (int)iss);
+                        printf("\n");
+                        time_t timeStamp = 0;
+                        memcpy(&timeStamp, dataPacket + 2, 4);
+                        printf("%s", ctime(&timeStamp));
+                        int light_value = (int)dataPacket[8];
+                        int ldr_value = 0;
+                        int counter = 0;
+                        for (int d = 0; d < 5; d++)
+                        {
+                            memcpy(&ldr_value, dataPacket + 6 + counter, 2);
+                            printf("LDR :%d\n", ldr_value);
+                            counter += 3;
+                        }
+                        
+                        if (light_value == 1)
+                        {
+                            printf("LIGHT ON\n");
+                        }
+                        else
+                        {
+                            printf("LIGHT OFF\n");
+                        }
+                        printf("----------------------\n");
+                        sprintf(bufWritLogSta, "%d , %d, %d, %s", (int)iss, ldr_value, light_value, ctime(&timeStamp));
+                        write(logSamples, bufWritLogSta, strlen(bufWritLogSta));
+                    }
+                    if (dataPacket[0] == 3)
+                    {
+                        char iss = dataPacket[1];
+                        printf("----------------------");
+                        printf("\nISS: %d", (int)iss);
+                        printf("\n");
+                        time_t timeStamp = 0;
+                        memcpy(&timeStamp, dataPacket + 2, 4);
+                        printf("%s", ctime(&timeStamp));
+                        int mov_value = (int)dataPacket[6];
+                        if (mov_value == 1)
+                        {
+                            printf("Movement detected\n");
+                        }
+                        printf("----------------------\n");
+                    }
+                    dataPacket[valread] = '\0';
+
+                }
+            }
+        }
     }
+    return 0;
 }
