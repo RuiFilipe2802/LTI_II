@@ -4,7 +4,7 @@
 #include <time.h>
 #include <SPI.h>
 
-#define timeSeconds 1
+#define timeSeconds 2.5
 #define MAX 512
 #define MAXMOV 7
 #define ISS 1
@@ -98,18 +98,23 @@ void loop() {
       samplesMov();
     }
 
-    if (currentMillis - previousMillis >= (sampleTime / sampleFreq) * 1000) {
+    if (currentMillis - previousMillis >= sampleFreq * 1000) {
       samplesLDR(currentMillis, counter);
-      counter += 3;
+      counter += 7;
       nSamples++;
     }
     printf("%d\n", curMillis - prevMillis);
-    if (nSamples == 5) {
+    if (nSamples == (sampleTime / sampleFreq)) {
       client.write(dataPacket, sizeof(dataPacket));
       client.stop();
       nSamples = 0;
       prevMillis = curMillis;
       counter = 0;
+    }
+    if (value_lightSensor < 100) {
+      digitalWrite(led, HIGH);
+    } else {
+      digitalWrite(led, LOW);
     }
   }
   //digitalWrite(light, HIGH);
@@ -192,10 +197,10 @@ void getStart(String startPacket) {
   }
   memcpy(&curTime, timeStamp, 4);
   Serial.println(ctime(&curTime));
-  sampleFreq = (int)(startPacket[6]);
-  sampleTime = (int)(startPacket[7]);
-  Serial.println(sampleFreq);
+  sampleTime = (int)(startPacket[6]);
+  sampleFreq = (int)(startPacket[7]);
   Serial.println(sampleTime);
+  Serial.println(sampleFreq);
   startCollecting = true;
 }
 
@@ -214,7 +219,7 @@ void getStop(String startPacket) {
   startCollecting = false;
 }
 
-void getLight(String lightPacket){
+void getLight(String lightPacket) {
   time_t curTime = 0;
   char timeStamp[4];
   printf("^^^^");
@@ -227,22 +232,29 @@ void getLight(String lightPacket){
   }
   memcpy(&curTime, timeStamp, 4);
   Serial.println(ctime(&curTime));
-  if(lightPacket[6] == 0){
+  if (lightPacket[6] == 0) {
     digitalWrite(light, LOW);
   }
-  if(lightPacket[6] == 1){
+  if (lightPacket[6] == 1) {
     digitalWrite(light, HIGH);
   }
   Serial.println(lightPacket[6], BIN);
 }
 
 void insertValuesDataPacket(int counter) {
+  float resistorVoltage, ldrVoltage;
+  float ldrResistance;
+  String packetRec;
   value_lightSensor = analogRead(lightSensor);
+  resistorVoltage = (float)value_lightSensor / 4095 * 3.3;
+  ldrVoltage = 3.3 - resistorVoltage;
+  ldrResistance = ldrVoltage / resistorVoltage * 1000;
   memcpy(dataPacket + DATAPACKETEMPTY + counter, &value_lightSensor, 2);
+  memcpy(dataPacket + DATAPACKETEMPTY + counter + 2, &ldrResistance, 4);
   Serial.println(value_lightSensor);
-  value_lightSensor = 50;
+  printf("RESISTENCIA: %.2f\n", ldrResistance);
   value_light = digitalRead(light);
-  memcpy(dataPacket + DATAPACKETEMPTY + counter + 2, &value_light, 1);
+  memcpy(dataPacket + DATAPACKETEMPTY + counter + 6, &value_light, 1);
   Serial.println(value_light);
 }
 
