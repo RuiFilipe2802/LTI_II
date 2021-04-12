@@ -14,6 +14,7 @@
 #include <sys/time.h>  //FD_SET, FD_ISSET, FD_ZERO macros
 #include <pthread.h>
 
+int threadID = 2;
 
 void print_bits(unsigned char x)
 {
@@ -40,7 +41,7 @@ void print_bitsT(u_int32_t x)
     printf("\n");
 }
 
-void getConfigFile(int *port, int *sampleTime, int *sampleFreq, char *typeCom)
+void getConfigFile(int *port, int *sampleTime, int *sampleFreq)
 {
     int increment = 0;
     int sizeBuf;
@@ -63,13 +64,12 @@ void getConfigFile(int *port, int *sampleTime, int *sampleFreq, char *typeCom)
         *sampleTime = atoi(arguments[1]);
         *sampleFreq = atoi(arguments[2]);
         //typeCom = arguments[3];
-        strcpy(typeCom, arguments[3]);
+        //strcpy(typeCom, arguments[3]);
     }
 }
 
 void saveTimeStampPacket(char *arr, u_int32_t a)
 {
-
     for (int i = 2; i < 6; ++i)
     {
         arr[i] = a & 0xff;
@@ -79,7 +79,7 @@ void saveTimeStampPacket(char *arr, u_int32_t a)
 
 void creatStartPacket(char *packet, int sampleTime, int sampleFreq)
 {
-    u_int64_t timeStamp;
+    time_t timeStamp;
     time(&timeStamp);
     packet[0] = (char)0;
     packet[1] = (char)1;
@@ -90,7 +90,7 @@ void creatStartPacket(char *packet, int sampleTime, int sampleFreq)
 
 void creatLightPacket(char *packet, char ledState)
 {
-    u_int64_t timeStamp;
+    time_t timeStamp;
     time(&timeStamp);
     packet[0] = (char)4;
     packet[1] = (char)1;
@@ -118,9 +118,65 @@ void creatErrorPacket(char *packet, int systemId, char errorType)
     packet[6] = errorType;
 }
 
+void firstMenu()
+{
+    int op;
+    do
+    {
+        printf("*******************************\n");
+        printf("************ MENU  ************\n");
+        printf("*   1- CONSULTAR LOGS         *\n");
+        printf("*   2- CONSULTAR ESTADOS      *\n");
+        printf("*   3- START/STOP             *\n");
+        printf("*   4- ACENDER/DESLIGAR LED   *\n");
+        printf("*   0- EXIT                   *\n");
+        printf("*******************************\n");
+        printf("*******************************\n");
+        scanf("%d", &op);
+        switch (op)
+        {
+        case 0:
+            exit(1);
+            //break;
+        case 1:
+            system("cls");
+            break;
+        case 2:
+            system("cls");
+            break;
+        case 3:
+            system("cls");
+            break;
+        case 4:
+            system("cls");
+            break;
+        case 5:
+            system("cls");
+            break;
+        default:
+            printf("Invalid Option\n");
+        }
+    } while (op != 0);
+}
+
+void *threadFunction(void *id)
+{
+    firstMenu();
+    sleep(1);
+    printf("BOAS");
+}
+
 int main(int argc, char const *argv[])
 {
-    
+    /*pthread_t threadN;
+
+    if (pthread_create(&(threadN), NULL, threadFunction, NULL) != 0)
+    {
+        return 1;
+    }*/
+
+    //pthread_join(threadN, NULL);
+    //sleep(1);
     int firsTime = 1;
     int stop = 0;
     int light = 0;
@@ -128,13 +184,13 @@ int main(int argc, char const *argv[])
     char lightPacket[7];
     char stopPacket[7];
     char *errorPacket;
-    char *dataPacket;
+    char dataPacket[512];
     int port;
     int sampleTime;
     int sampleFreq;
     char *typeCom;
-    int logError = open("logError.csv", O_CREAT | O_RDWR, 0600);
-    int logSamples = open("logSamples.csv", O_CREAT | O_RDWR, 0600);
+    int logError = open("logError.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
+    int logSamples = open("logSamples.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
     int logState = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
 
     int opt = 1;
@@ -142,7 +198,7 @@ int main(int argc, char const *argv[])
         max_clients = 30, activity, i, valread, sd;
     int max_sd;
     struct sockaddr_in address;
-    getConfigFile(&port, &sampleTime, &sampleFreq, typeCom);
+    getConfigFile(&port, &sampleTime, &sampleFreq);
 
     time_t timeStamp;
     time(&timeStamp);
@@ -155,9 +211,6 @@ int main(int argc, char const *argv[])
     //creatErrorPacket(errrotPacket, 3, 'B');
     //set of socket descriptors
     fd_set readfds;
-
-    //MENU
-
 
     //a message
     //initialise all client_socket[] to 0 so not checked
@@ -256,21 +309,21 @@ int main(int argc, char const *argv[])
                 firsTime = 0;
             }
 
-            if(light == 2){
+            if (light == 2)
+            {
                 creatLightPacket(lightPacket, 1);
                 send(new_socket, lightPacket, sizeof(char) * 7, 0);
                 printf("LAMPADA ON\n");
             }
 
-            /*if (stop == 4)
+            if (stop == 4)
             {
                 creatStopPacket(stopPacket, 1, 'a');
                 send(new_socket, stopPacket, sizeof(char) * 7, 0);
                 printf("Stop enviado\n");
                 stop = 0;
-            }*/
+            }
 
-            //add new socket to array of sockets
             for (i = 0; i < max_clients; i++)
             {
                 //if position is empty
@@ -284,33 +337,21 @@ int main(int argc, char const *argv[])
                 }
             }
         }
-        //else its some IO operation on some other socket
         for (i = 0; i < max_clients; i++)
         {
             sd = client_socket[i];
 
             if (FD_ISSET(sd, &readfds))
             {
-                //Check if it was for closing , and also read the
-                //incoming message
                 if ((valread = read(sd, dataPacket, 512)) == 0)
                 {
-
-                    //Somebody disconnected , get his details and print
                     getpeername(sd, (struct sockaddr *)&address,
                                 (socklen_t *)&addrlen);
-                    //printf("Host disconnected , ip %s , port %d \n",
-                    //     inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-
-                    //Close the socket and mark as 0 in list for reuse
                     close(sd);
                     client_socket[i] = 0;
                 }
-                //Echo back the message that came in
                 else
                 {
-                    //set the string terminating NULL byte on the end
-                    //of the data read
 
                     if (dataPacket[0] == 2)
                     {
@@ -325,14 +366,17 @@ int main(int argc, char const *argv[])
                         printf("%s", ctime(&timeStamp));
                         int light_value = (int)dataPacket[8];
                         int ldr_value = 0;
+                        float ldr_resistance = 0.0;
                         int counter = 0;
-                        for (int d = 0; d < 5; d++)
+                        for (int d = 0; d < (sampleTime / sampleFreq); d++)
                         {
                             memcpy(&ldr_value, dataPacket + 6 + counter, 2);
-                            printf("LDR :%d\n", ldr_value);
-                            counter += 3;
+                            memcpy(&ldr_resistance, dataPacket + 8 + counter, 4);
+                            printf("LDR ANALOG VALUE :%d\n", ldr_value);
+                            printf("LDR RESISTANCE:%.2f\n", ldr_resistance);
+                            counter += 7;
                         }
-                        
+
                         if (light_value == 1)
                         {
                             printf("LIGHT ON\n");
@@ -342,7 +386,7 @@ int main(int argc, char const *argv[])
                             printf("LIGHT OFF\n");
                         }
                         printf("----------------------\n");
-                        sprintf(bufWritLogSta, "%d , %d, %d, %s", (int)iss, ldr_value, light_value, ctime(&timeStamp));
+                        sprintf(bufWritLogSta, "%d , %d , %.2f , %d, %s", (int)iss, ldr_value, ldr_resistance, light_value, ctime(&timeStamp));
                         write(logSamples, bufWritLogSta, strlen(bufWritLogSta));
                     }
                     if (dataPacket[0] == 3)
@@ -361,8 +405,7 @@ int main(int argc, char const *argv[])
                         }
                         printf("----------------------\n");
                     }
-                    dataPacket[valread] = '\0';
-
+                    //dataPacket[valread] = '\0';
                 }
             }
         }
