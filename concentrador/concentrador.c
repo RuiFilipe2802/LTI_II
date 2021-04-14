@@ -112,18 +112,10 @@ void creatStopPacket(char *packet, int systemId, char stopReason)
     packet[6] = stopReason;
 }
 
-void creatErrorPacket(char *packet, int systemId, char errorType)
-{
-    time_t timeStamp;
-    time(&timeStamp);
-    packet[0] = (char)3;
-    packet[1] = (char)systemId;
-    saveTimeStampPacket(packet, timeStamp);
-    packet[6] = errorType;
-}
-
 void firstMenu()
 {
+    int log = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
+    time_t timeStamp;
     int op;
     do
     {
@@ -141,9 +133,67 @@ void firstMenu()
         switch (op)
         {
         case 0:
+            time(&timeStamp);
+            char bufWritLogSta[1024];
+            sprintf(bufWritLogSta, "Stoped Concentrador: %s", ctime(&timeStamp));
+            write(log, bufWritLogSta, strlen(bufWritLogSta));
+            close(log);
             exit(1);
-            //break;
+            break;
         case 1:
+            system("clear");
+            printf("configFile(1) | logError(2) | logSamples(3) | logSamplesMov(4) | logState(5)\n");
+            int opt;
+            scanf("%d", &opt);
+            system("clear");
+            if (opt == 1)
+            {
+                pid_t p1 = fork();
+                if (p1 == 0)
+                {
+                    printf("port,sample time, sample freq\n\n");
+                    execlp("cat", "cat", "configFile.csv", NULL);
+                }
+            }
+            else if (opt == 2)
+            {
+                pid_t p1 = fork();
+                if (p1 == 0)
+                {
+                    printf("ISS, error code, timestamp\n\n");
+                    execlp("cat", "cat", "logError.csv", NULL);
+                }
+            }
+            else if (opt == 3)
+            {
+                pid_t p1 = fork();
+                if (p1 == 0)
+                {
+                    printf("ISS,ldr value,ldr voltage,ldr_resistance,ldrLux,light_value,timeStamp\n\n");
+                    execlp("cat", "cat", "logSamples.csv", NULL);
+                }
+            }
+            else if (opt == 4)
+            {
+                pid_t p1 = fork();
+                if (p1 == 0)
+                {
+                    printf("ISS,mov value,timeStamp\n\n");
+                    execlp("cat", "cat", "logSamplesMov.csv", NULL);
+                }
+            }
+            else if (opt == 5)
+            {
+                pid_t p1 = fork();
+                if (p1 == 0)
+                {
+                    execlp("cat", "cat", "logState.csv", NULL);
+                }
+            }
+            wait(NULL);
+            printf("\n\nPress (1) to return\n");
+            int d;
+            scanf("%d", &d);
             system("clear");
             break;
         case 2:
@@ -154,16 +204,16 @@ void firstMenu()
             break;
         case 3:
             system("clear");
-            pthread_mutex_lock(&mutex);
             printf("START(1) || STOP(2)\n");
+            pthread_mutex_lock(&mutex);
             scanf("%d", &send_data_stop_light_packet);
             pthread_mutex_unlock(&mutex);
             system("clear");
             break;
         case 4:
             system("clear");
-            pthread_mutex_lock(&mutex);
             printf("Ligar (3) || Desligar (4)\n");
+            pthread_mutex_lock(&mutex);
             scanf("%d", &send_data_stop_light_packet);
             pthread_mutex_unlock(&mutex);
             system("clear");
@@ -201,6 +251,7 @@ int main(int argc, char const *argv[])
     int logClients = open("logClients.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
     int logError = open("logError.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
     int logSamples = open("logSamples.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
+    int logSamplesMov = open("logSamplesMov.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
     int logState = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
 
     int opt = 1;
@@ -215,6 +266,7 @@ int main(int argc, char const *argv[])
     char bufWritLogSta[1024];
     sprintf(bufWritLogSta, "Started Concentrador: %s", ctime(&timeStamp));
     write(logState, bufWritLogSta, strlen(bufWritLogSta));
+    close(logState);
 
     pthread_t threadN;
     pthread_mutex_init(&mutex, NULL);
@@ -301,6 +353,11 @@ int main(int argc, char const *argv[])
                 creatStartPacket(startPacket, sampleTime, sampleFreq);
                 send(new_socket, startPacket, sizeof(char) * 8, 0);
                 send_data_stop_light_packet = 0;
+                time(&timeStamp);
+                int logStateIni = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
+                sprintf(bufWritLogSta, "Started collecting from ISS: 1 at %s", ctime(&timeStamp));
+                write(logStateIni, bufWritLogSta, strlen(bufWritLogSta));
+                close(logStateIni);
             }
 
             if (send_data_stop_light_packet == 2)
@@ -309,6 +366,11 @@ int main(int argc, char const *argv[])
                 send(new_socket, stopPacket, sizeof(char) * 7, 0);
                 printf("Stop enviado\n");
                 send_data_stop_light_packet = 0;
+                time(&timeStamp);
+                int logStateStop = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
+                sprintf(bufWritLogSta, "Stoped collecting from ISS: 1 at %s", ctime(&timeStamp));
+                write(logStateStop, bufWritLogSta, strlen(bufWritLogSta));
+                close(logStateStop);
             }
 
             if (send_data_stop_light_packet == 3)
@@ -328,12 +390,10 @@ int main(int argc, char const *argv[])
 
             if (gps == 1)
             {
-                
             }
 
             if (gps == 2)
             {
-                
             }
 
             for (i = 0; i < max_clients; i++)
@@ -364,22 +424,22 @@ int main(int argc, char const *argv[])
 
                     if (dataPacket[0] == 2)
                     {
-                        stop++;
-                        light++;
                         char iss = dataPacket[1];
                         time_t timeStamp = 0;
                         memcpy(&timeStamp, dataPacket + 2, 4);
                         int light_value = 0;
                         int ldr_value = 0;
                         float ldr_resistance = 0.0;
+                        float ldr_voltage = 0.0;
                         int counter = 0;
                         float ldrLux = 0.0;
                         for (int d = 0; d < (sampleTime / sampleFreq); d++)
                         {
                             memcpy(&ldr_value, dataPacket + 6 + counter, 2);
                             memcpy(&ldr_resistance, dataPacket + 8 + counter, 4);
-                            memcpy(&ldr_value, dataPacket + 12 + counter, 1);
+                            memcpy(&light_value, dataPacket + 12 + counter, 1);
                             ldrLux = 12518931 * pow(ldr_resistance, -1.405);
+                            ldr_voltage = (ldr_value * 3.3) / 4095;
                             if (real_time_watch == 1)
                             {
                                 printf("\n----------------------");
@@ -387,6 +447,7 @@ int main(int argc, char const *argv[])
                                 printf("\n");
                                 printf("%s", ctime(&timeStamp));
                                 printf("LDR ANALOG VALUE :%d\n", ldr_value);
+                                printf("LDR VOLTAGE VALUE :%.2f\n", ldr_voltage);
                                 printf("LDR RESISTANCE: %.2f\n", ldr_resistance);
                                 printf("LUX: %.1f\n", ldrLux);
                                 printf("LED VALUE: %d\n", light_value);
@@ -401,7 +462,7 @@ int main(int argc, char const *argv[])
                                 printf("----------------------\n");
                             }
                             counter += 7;
-                            sprintf(bufWritLogSta, "%d , %d , %.2f , %d, %s", (int)iss, ldr_value, ldr_resistance, light_value, ctime(&timeStamp));
+                            sprintf(bufWritLogSta, "%d , %d , %.2f, %.2f , %.1f, %d, %s", (int)iss, ldr_value, ldr_voltage, ldr_resistance, ldrLux, light_value, ctime(&timeStamp));
                             write(logSamples, bufWritLogSta, strlen(bufWritLogSta));
                         }
                     }
@@ -420,8 +481,27 @@ int main(int argc, char const *argv[])
                             printf("Movement detected\n");
                             printf("----------------------\n");
                         }
+                        sprintf(bufWritLogSta, "%d , %d, %s", (int)iss, mov_value, ctime(&timeStamp));
+                        write(logSamplesMov, bufWritLogSta, strlen(bufWritLogSta));
                     }
-                    //dataPacket[valread] = '\0';
+                    if (dataPacket[0] == 5){
+                        char iss = dataPacket[1];
+                        time_t timeStamp = 0;
+                        memcpy(&timeStamp, dataPacket + 2, 4);
+                        char errorCode = dataPacket[6];
+                        if (real_time_watch == 1)
+                        {
+                            printf("----------------------\n");
+                            printf("%s", ctime(&timeStamp));
+                            printf("ISS: %d", (int)iss);
+                            printf("\n");
+                            printf("Error receveid:%c", errorCode);
+                            printf("----------------------\n");
+                        }
+                        sprintf(bufWritLogSta, "%d , %c, %s", (int)iss, errorCode, ctime(&timeStamp));
+                        write(logError, bufWritLogSta, strlen(bufWritLogSta));
+                    }
+
                 }
             }
         }
