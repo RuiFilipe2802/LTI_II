@@ -52,7 +52,7 @@ void print_bitsT(unsigned long x) {
 }
 
 void IRAM_ATTR detectsMovement() {
-  Serial.println("MOTION DETECTED!!!");
+  Serial.println("~~~~~~~~~~~~~~~~~~~~~\nMOTION DETECTED");
   digitalWrite(led, HIGH);
   startTimer = true;
   lastTrigger = millis();
@@ -70,7 +70,7 @@ void setup() {
   }
   Serial.print("WiFi connected with IP: ");
   Serial.println(WiFi.localIP());
-  Serial.println("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
+  Serial.println("----------------------------------");
   timeClient.begin();
   //timeClient.setTimeOffset(3600);
   pinMode(motionSensor, INPUT_PULLUP);
@@ -103,7 +103,6 @@ void loop() {
       counter += 7;
       nSamples++;
     }
-    printf("%d\n", curMillis - prevMillis);
     if (nSamples == (sampleTime / sampleFreq)) {
       client.write(dataPacket, sizeof(dataPacket));
       client.stop();
@@ -124,15 +123,15 @@ void loop() {
       switch (packetRec[0]) {
         case 0:    // START
           getStart(packetRec);
-          printf("START PACKET");
+          printf("START PACKET\n");
           break;
         case 1:    // STOP
           getStop(packetRec);
-          printf("STOP PACKET");
+          printf("STOP PACKET\n");
           break;
         case 4:    // LIGHT
           getLight(packetRec);
-          printf("LIGHT PACKET");
+          printf("LIGHT PACKET\n");
           break;
       }
     }
@@ -145,6 +144,7 @@ void samplesMov() {
   client.write(movPacket, sizeof(movPacket));
   client.stop();
   Serial.println("Motion stopped...");
+  Serial.println("~~~~~~~~~~~~~~~~~~~~~");
   digitalWrite(led, LOW);
   startTimer = false;
 }
@@ -153,11 +153,11 @@ void samplesLDR(unsigned long currentMillis, int counter) {
   createDATA(dataPacket, 2);
   insertValuesDataPacket(counter);
   // for(int t=0;t<MAX;t++){
-  for (int t = 0; t < 25; t++) {
+  /*for (int t = 0; t < 25; t++) {
     Serial.print(dataPacket[t], BIN);
     Serial.print(",");
   }
-  printf("\n");
+  printf("\n");*/
   previousMillis = currentMillis;
 }
 
@@ -171,7 +171,7 @@ long getTime() {
   // formattedDate = timeClient.getFormattedDate();
   // Serial.println(formattedDate);
   time_t epcohTime = timeClient.getEpochTime();
-  Serial.println(ctime(&epcohTime));
+  //Serial.println(ctime(&epcohTime));
   return epcohTime;
   /*// Extract date
     int splitT = formattedDate.indexOf("T");
@@ -188,47 +188,44 @@ long getTime() {
 void getStart(String startPacket) {
   time_t curTime = 0;
   char timeStamp[4];
-  for (int i = 0; i < 8; i++) {
+  /*for (int i = 0; i < 8; i++) {
     Serial.println(startPacket[i], BIN);
-  }
+    }*/
   for (int j = 0; j < 4; j++) {
     timeStamp[j] = startPacket[j + 2];
-    Serial.println(timeStamp[j], BIN);
+    //Serial.println(timeStamp[j], BIN);
   }
   memcpy(&curTime, timeStamp, 4);
-  Serial.println(ctime(&curTime));
   sampleTime = (int)(startPacket[6]);
   sampleFreq = (int)(startPacket[7]);
+  startCollecting = true;
+  printf("Trama Start recebida\n");
+  Serial.println(ctime(&curTime));
   Serial.println(sampleTime);
   Serial.println(sampleFreq);
-  startCollecting = true;
 }
 
 void getStop(String startPacket) {
   time_t curTime = 0;
   char timeStamp[4];
-  for (int i = 0; i < 8; i++) {
+  /*for (int i = 0; i < 8; i++) {
     Serial.println(startPacket[i], BIN);
-  }
+    }*/
   for (int j = 0; j < 4; j++) {
     timeStamp[j] = startPacket[j + 2];
-    Serial.println(timeStamp[j], BIN);
+    //Serial.println(timeStamp[j], BIN);
   }
   memcpy(&curTime, timeStamp, 4);
-  Serial.println(ctime(&curTime));
+  //Serial.println(ctime(&curTime));
   startCollecting = false;
 }
 
 void getLight(String lightPacket) {
   time_t curTime = 0;
   char timeStamp[4];
-  printf("^^^^");
-  for (int i = 0; i < 7; i++) {
-    Serial.println(lightPacket[i], BIN);
-  }
   for (int j = 0; j < 4; j++) {
     timeStamp[j] = lightPacket[j + 2];
-    Serial.println(timeStamp[j], BIN);
+    //Serial.println(timeStamp[j], BIN);
   }
   memcpy(&curTime, timeStamp, 4);
   Serial.println(ctime(&curTime));
@@ -238,7 +235,6 @@ void getLight(String lightPacket) {
   if (lightPacket[6] == 1) {
     digitalWrite(light, HIGH);
   }
-  Serial.println(lightPacket[6], BIN);
 }
 
 void insertValuesDataPacket(int counter) {
@@ -251,11 +247,12 @@ void insertValuesDataPacket(int counter) {
   ldrResistance = ldrVoltage / resistorVoltage * 1000;
   memcpy(dataPacket + DATAPACKETEMPTY + counter, &value_lightSensor, 2);
   memcpy(dataPacket + DATAPACKETEMPTY + counter + 2, &ldrResistance, 4);
-  Serial.println(value_lightSensor);
-  printf("RESISTENCIA: %.2f\n", ldrResistance);
   value_light = digitalRead(light);
   memcpy(dataPacket + DATAPACKETEMPTY + counter + 6, &value_light, 1);
-  Serial.println(value_light);
+  printf("*******************************\nTrama Enviada\n");
+  printf("LDR ANALOG VALUE :%d\n", value_lightSensor);
+  printf("LDR RESISTANCE:%.2f\n", ldrResistance);
+  printf("LAMPADA: %d\n", value_light);
 }
 
 void createDATA(uint8_t *pacote, uint8_t iss) {
