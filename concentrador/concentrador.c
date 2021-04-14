@@ -13,8 +13,12 @@
 #include <arpa/inet.h> //close
 #include <sys/time.h>  //FD_SET, FD_ISSET, FD_ZERO macros
 #include <pthread.h>
+#include <math.h>
 
-int threadID = 2;
+int real_time_watch = 0;
+int send_data_stop_light_packet = 0;
+int gps = 0;
+pthread_mutex_t mutex;
 
 void print_bits(unsigned char x)
 {
@@ -123,15 +127,16 @@ void firstMenu()
     int op;
     do
     {
-        printf("*******************************\n");
-        printf("************ MENU  ************\n");
-        printf("*   1- CONSULTAR LOGS         *\n");
-        printf("*   2- CONSULTAR ESTADOS      *\n");
-        printf("*   3- START/STOP             *\n");
-        printf("*   4- ACENDER/DESLIGAR LED   *\n");
-        printf("*   0- EXIT                   *\n");
-        printf("*******************************\n");
-        printf("*******************************\n");
+        printf("********************************\n");
+        printf("************ MENU  *************\n");
+        printf("*   1- CONSULTAR LOGS          *\n");
+        printf("*   2- CONSULTAR EM TEMPO REAL *\n");
+        printf("*   3- START/STOP              *\n");
+        printf("*   4- ACENDER/DESLIGAR LED    *\n");
+        printf("*   5- CONSULTAR POSIÇÃO ISS   *\n");
+        printf("*   0- EXIT                    *\n");
+        printf("********************************\n");
+        printf("********************************\n");
         scanf("%d", &op);
         switch (op)
         {
@@ -139,19 +144,34 @@ void firstMenu()
             exit(1);
             //break;
         case 1:
-            system("cls");
+            system("clear");
             break;
         case 2:
-            system("cls");
+            system("clear");
+            pthread_mutex_lock(&mutex);
+            real_time_watch = 1;
+            pthread_mutex_unlock(&mutex);
             break;
         case 3:
-            system("cls");
+            system("clear");
+            pthread_mutex_lock(&mutex);
+            printf("START(1) || STOP(2)\n");
+            scanf("%d", &send_data_stop_light_packet);
+            pthread_mutex_unlock(&mutex);
+            system("clear");
             break;
         case 4:
-            system("cls");
+            system("clear");
+            pthread_mutex_lock(&mutex);
+            printf("Ligar (3) || Desligar (4)\n");
+            scanf("%d", &send_data_stop_light_packet);
+            pthread_mutex_unlock(&mutex);
+            system("clear");
             break;
         case 5:
-            system("cls");
+            printf("Consultar (1) || Alterar (2)\n");
+            scanf("%d", &gps);
+            system("clear");
             break;
         default:
             printf("Invalid Option\n");
@@ -159,24 +179,13 @@ void firstMenu()
     } while (op != 0);
 }
 
-void *threadFunction(void *id)
+void *threadFunction()
 {
     firstMenu();
-    sleep(1);
-    printf("BOAS");
 }
 
 int main(int argc, char const *argv[])
 {
-    /*pthread_t threadN;
-
-    if (pthread_create(&(threadN), NULL, threadFunction, NULL) != 0)
-    {
-        return 1;
-    }*/
-
-    //pthread_join(threadN, NULL);
-    //sleep(1);
     int firsTime = 1;
     int stop = 0;
     int light = 0;
@@ -189,6 +198,7 @@ int main(int argc, char const *argv[])
     int sampleTime;
     int sampleFreq;
     char *typeCom;
+    int logClients = open("logClients.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
     int logError = open("logError.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
     int logSamples = open("logSamples.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
     int logState = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
@@ -206,28 +216,27 @@ int main(int argc, char const *argv[])
     sprintf(bufWritLogSta, "Started Concentrador: %s", ctime(&timeStamp));
     write(logState, bufWritLogSta, strlen(bufWritLogSta));
 
+    pthread_t threadN;
+    pthread_mutex_init(&mutex, NULL);
+    if (pthread_create(&(threadN), NULL, threadFunction, NULL) != 0)
+    {
+        return 1;
+    }
     //printf("Port: %d\nSample Time: %d\nSample Freq: %d\nType Com: %s\n", port, sampleTime, sampleFreq, typeCom);
-    //creatStopPacket(stopPacket, 2, 'A');
-    //creatErrorPacket(errrotPacket, 3, 'B');
-    //set of socket descriptors
+
     fd_set readfds;
 
-    //a message
-    //initialise all client_socket[] to 0 so not checked
     for (i = 0; i < max_clients; i++)
     {
         client_socket[i] = 0;
     }
 
-    //create a master socket
     if ((socket_pc_esp = socket(AF_INET, SOCK_STREAM, 0)) == 0)
     {
         perror("socket failed");
         exit(EXIT_FAILURE);
     }
 
-    //set master socket to allow multiple connections ,
-    //this is just a good habit, it will work without this
     if (setsockopt(socket_pc_esp, SOL_SOCKET, SO_REUSEADDR, (char *)&opt,
                    sizeof(opt)) < 0)
     {
@@ -235,56 +244,43 @@ int main(int argc, char const *argv[])
         exit(EXIT_FAILURE);
     }
 
-    //type of socket created
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(port);
 
-    //bind the socket to localhost port 8888
     if (bind(socket_pc_esp, (struct sockaddr *)&address, sizeof(address)) < 0)
     {
         perror("bind failed");
         exit(EXIT_FAILURE);
     }
-    printf("Listener on port %d \n", port);
 
-    //try to specify maximum of 3 pending connections for the master socket
     if (listen(socket_pc_esp, 3) < 0)
     {
         perror("listen");
         exit(EXIT_FAILURE);
     }
 
-    //accept the incoming connection
     addrlen = sizeof(address);
-    puts("Waiting for connections ...");
 
     while (1)
     {
-
-        //clear the socket set
         FD_ZERO(&readfds);
 
-        //add master socket to set
         FD_SET(socket_pc_esp, &readfds);
+
         max_sd = socket_pc_esp;
-        //add child sockets to set
+
         for (i = 0; i < max_clients; i++)
         {
-            //socket descriptor
             sd = client_socket[i];
 
-            //if valid socket descriptor then add to read list
             if (sd > 0)
                 FD_SET(sd, &readfds);
 
-            //highest file descriptor number, need it for the select function
             if (sd > max_sd)
                 max_sd = sd;
         }
 
-        //wait for an activity on one of the sockets , timeout is NULL ,
-        //so wait indefinitely
         activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
 
         if ((activity < 0) && (errno != EINTR))
@@ -292,8 +288,6 @@ int main(int argc, char const *argv[])
             printf("select error");
         }
 
-        //If something happened on the master socket ,
-        //then its an incoming connection
         if (FD_ISSET(socket_pc_esp, &readfds))
         {
             if ((new_socket = accept(socket_pc_esp,
@@ -302,37 +296,52 @@ int main(int argc, char const *argv[])
                 perror("accept");
                 exit(EXIT_FAILURE);
             }
-            if (firsTime == 1)
+            if (send_data_stop_light_packet == 1)
             {
                 creatStartPacket(startPacket, sampleTime, sampleFreq);
                 send(new_socket, startPacket, sizeof(char) * 8, 0);
-                firsTime = 0;
+                send_data_stop_light_packet = 0;
             }
 
-            if (light == 2)
-            {
-                creatLightPacket(lightPacket, 1);
-                send(new_socket, lightPacket, sizeof(char) * 7, 0);
-                printf("LAMPADA ON\n");
-            }
-
-            if (stop == 4)
+            if (send_data_stop_light_packet == 2)
             {
                 creatStopPacket(stopPacket, 1, 'a');
                 send(new_socket, stopPacket, sizeof(char) * 7, 0);
                 printf("Stop enviado\n");
-                stop = 0;
+                send_data_stop_light_packet = 0;
+            }
+
+            if (send_data_stop_light_packet == 3)
+            {
+                creatLightPacket(lightPacket, 1);
+                send(new_socket, lightPacket, sizeof(char) * 7, 0);
+                printf("LAMPADA ON\n");
+                send_data_stop_light_packet = 0;
+            }
+            if (send_data_stop_light_packet == 4)
+            {
+                creatLightPacket(lightPacket, 0);
+                send(new_socket, lightPacket, sizeof(char) * 7, 0);
+                printf("LAMPADA OFF\n");
+                send_data_stop_light_packet = 0;
+            }
+
+            if (gps == 1)
+            {
+                
+            }
+
+            if (gps == 2)
+            {
+                
             }
 
             for (i = 0; i < max_clients; i++)
             {
-                //if position is empty
 
                 if (client_socket[i] == 0)
                 {
                     client_socket[i] = new_socket;
-                    //printf("Adding to list of sockets as %d\n", i);
-
                     break;
                 }
             }
@@ -358,52 +367,59 @@ int main(int argc, char const *argv[])
                         stop++;
                         light++;
                         char iss = dataPacket[1];
-                        printf("----------------------");
-                        printf("\nISS: %d", (int)iss);
-                        printf("\n");
                         time_t timeStamp = 0;
                         memcpy(&timeStamp, dataPacket + 2, 4);
-                        printf("%s", ctime(&timeStamp));
-                        int light_value = (int)dataPacket[8];
+                        int light_value = 0;
                         int ldr_value = 0;
                         float ldr_resistance = 0.0;
                         int counter = 0;
+                        float ldrLux = 0.0;
                         for (int d = 0; d < (sampleTime / sampleFreq); d++)
                         {
                             memcpy(&ldr_value, dataPacket + 6 + counter, 2);
                             memcpy(&ldr_resistance, dataPacket + 8 + counter, 4);
-                            printf("LDR ANALOG VALUE :%d\n", ldr_value);
-                            printf("LDR RESISTANCE:%.2f\n", ldr_resistance);
+                            memcpy(&ldr_value, dataPacket + 12 + counter, 1);
+                            ldrLux = 12518931 * pow(ldr_resistance, -1.405);
+                            if (real_time_watch == 1)
+                            {
+                                printf("\n----------------------");
+                                printf("\nISS: %d", (int)iss);
+                                printf("\n");
+                                printf("%s", ctime(&timeStamp));
+                                printf("LDR ANALOG VALUE :%d\n", ldr_value);
+                                printf("LDR RESISTANCE: %.2f\n", ldr_resistance);
+                                printf("LUX: %.1f\n", ldrLux);
+                                printf("LED VALUE: %d\n", light_value);
+                                if (light_value == 1)
+                                {
+                                    printf("LIGHT ON\n");
+                                }
+                                else if (light_value == 0)
+                                {
+                                    printf("LIGHT OFF\n");
+                                }
+                                printf("----------------------\n");
+                            }
                             counter += 7;
+                            sprintf(bufWritLogSta, "%d , %d , %.2f , %d, %s", (int)iss, ldr_value, ldr_resistance, light_value, ctime(&timeStamp));
+                            write(logSamples, bufWritLogSta, strlen(bufWritLogSta));
                         }
-
-                        if (light_value == 1)
-                        {
-                            printf("LIGHT ON\n");
-                        }
-                        else
-                        {
-                            printf("LIGHT OFF\n");
-                        }
-                        printf("----------------------\n");
-                        sprintf(bufWritLogSta, "%d , %d , %.2f , %d, %s", (int)iss, ldr_value, ldr_resistance, light_value, ctime(&timeStamp));
-                        write(logSamples, bufWritLogSta, strlen(bufWritLogSta));
                     }
                     if (dataPacket[0] == 3)
                     {
                         char iss = dataPacket[1];
-                        printf("----------------------");
-                        printf("\nISS: %d", (int)iss);
-                        printf("\n");
                         time_t timeStamp = 0;
                         memcpy(&timeStamp, dataPacket + 2, 4);
-                        printf("%s", ctime(&timeStamp));
                         int mov_value = (int)dataPacket[6];
-                        if (mov_value == 1)
+                        if (mov_value == 1 && real_time_watch == 1)
                         {
+                            printf("----------------------\n");
+                            printf("%s", ctime(&timeStamp));
+                            printf("ISS: %d", (int)iss);
+                            printf("\n");
                             printf("Movement detected\n");
+                            printf("----------------------\n");
                         }
-                        printf("----------------------\n");
                     }
                     //dataPacket[valread] = '\0';
                 }
