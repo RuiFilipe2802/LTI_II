@@ -72,6 +72,19 @@ void getConfigFile(int *port, int *sampleTime, int *sampleFreq)
     }
 }
 
+const char *getFieldFromFile(char *line, int num)
+{
+    const char *tok;
+    for (tok = strtok(line, ",");
+         tok && *tok;
+         tok = strtok(NULL, ",\n"))
+    {
+        if (!--num)
+            return tok;
+    }
+    return NULL;
+}
+
 void saveTimeStampPacket(char *arr, u_int32_t a)
 {
     for (int i = 2; i < 6; ++i)
@@ -112,11 +125,70 @@ void creatStopPacket(char *packet, int systemId, char stopReason)
     packet[6] = stopReason;
 }
 
+void betweenDates(int num, int hour1, int min1, int day1, int month1, int year1, int hour2, int min2, int day2, int month2, int year2)
+{
+    time_t result1 = 0;
+    time_t result2 = 0;
+
+    const char *T;
+    T = 
+
+    sscanf(T, "%4d.%2d.%2d %2d:%2d", &year, &month, &day, &hour, &min
+
+    struct tm firstdate = {0};
+    firstdate.tm_year = year1 - 1900;
+    firstdate.tm_mon = month1 - 1;
+    firstdate.tm_mday = day1;
+    firstdate.tm_hour = hour1;
+    firstdate.tm_min = min1;
+
+    struct tm secdate = {0};
+    firstdate.tm_year = year2 - 1900;
+    firstdate.tm_mon = month2 - 1;
+    firstdate.tm_mday = day2;
+    firstdate.tm_hour = hour2;
+    firstdate.tm_min = min2;
+
+    if ((result1 = mktime(&firstdate)) == (time_t)-1)
+    {
+        fprintf(stderr, "Could not convert time input to time_t\n");
+    }
+    if ((result2 = mktime(&secdate)) == (time_t)-1)
+    {
+        fprintf(stderr, "Could not convert time input to time_t\n");
+    }
+
+    puts(ctime(&result1));
+    puts(ctime(&result2));
+
+    if (num == 1)
+    { // logSamples
+        FILE *stream = fopen("logSamples.csv", "r");
+        char line[1024];
+        while (fgets(line, 1024, stream))
+        {
+            char *temp = strdup(line);
+            printf("%s\n", getFieldFromFile(temp, 7));
+        }
+    }
+    else if (num == 2)
+    { //logSamplesMov
+        FILE *stream2 = fopen("logSamplesMov.csv", "r");
+        char line[1024];
+        while (fgets(line, 1024, stream2))
+        {
+            char *temp = strdup(line);
+            printf("%s\n", getFieldFromFile(temp, 3));
+        }
+    }
+}
+
 void firstMenu()
 {
     int log = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
     time_t timeStamp;
     int op;
+    system("clear");
     do
     {
         printf("********************************\n");
@@ -142,7 +214,16 @@ void firstMenu()
             break;
         case 1:
             system("clear");
-            printf("configFile(1) | logError(2) | logSamples(3) | logSamplesMov(4) | logState(5)\n");
+            printf("********************************\n");
+            printf("************ LOGS  *************\n");
+            printf("*   1- Config File             *\n");
+            printf("*   2- Log Error               *\n");
+            printf("*   3- Log Samples             *\n");
+            printf("*   4- Log Samples Mov         *\n");
+            printf("*   5- Log State               *\n");
+            printf("*   0- Quit                    *\n");
+            printf("********************************\n");
+            printf("********************************\n");
             int opt;
             scanf("%d", &opt);
             system("clear");
@@ -190,32 +271,86 @@ void firstMenu()
                     execlp("cat", "cat", "logState.csv", NULL);
                 }
             }
+            else if (opt == 0)
+            {
+                firstMenu();
+            }
+
             wait(NULL);
-            printf("\n\nPress (1) to return\n");
+            printf("\n\nPress any number to return\n");
             int d;
             scanf("%d", &d);
             system("clear");
             break;
         case 2:
             system("clear");
+            printf("********************************\n");
+            printf("*********** Consult  ***********\n");
+            printf("*   1- Log Samples             *\n");
+            printf("*   2- Log Samples Mov         *\n");
+            printf("*   0- Quit                    *\n");
+            printf("********************************\n");
+            printf("********************************\n");
+            int option;
+            int hour1, hour2, minute1, minute2, day1, day2, month1, month2, year1, year2;
+            scanf("%d", &option);
+            if (option == 0)
+            {
+                firstMenu();
+            }
+            system("clear");
+            printf("Input first date like shown ---> (hour minute day month year)\n");
+            printf("EXAMPLE: 12 25 15 4 2021\n");
+            scanf("%d %d %d %d %d", &hour1, &minute1, &day1, &month1, &year1);
+            printf("Input second date like shown ---> (hour minute day month year)\n");
+            printf("EXAMPLE: 15 25 15 4 2021\n");
+            scanf("%d %d %d %d %d", &hour2, &minute2, &day2, &month2, &year2);
+            if (option == 1)
+            {
+                betweenDates(1, hour1, minute1, day1, month1, year1, hour2, minute2, day2, month2, year2);
+            }
+            else if (option == 2)
+            {
+                betweenDates(2, hour1, minute1, day1, month1, year1, hour2, minute2, day2, month2, year2);
+            }
             pthread_mutex_lock(&mutex);
             real_time_watch = 1;
             pthread_mutex_unlock(&mutex);
             break;
         case 3:
             system("clear");
-            printf("START(1) || STOP(2)\n");
+            printf("********************************\n");
+            printf("********* Start/Stop  **********\n");
+            printf("*   1- Start                   *\n");
+            printf("*   2- Stop                    *\n");
+            printf("*   0- Quit                    *\n");
+            printf("********************************\n");
+            printf("********************************\n");
             pthread_mutex_lock(&mutex);
             scanf("%d", &send_data_stop_light_packet);
             pthread_mutex_unlock(&mutex);
+            if (send_data_stop_light_packet == 0)
+            {
+                firstMenu();
+            }
             system("clear");
             break;
         case 4:
             system("clear");
-            printf("Ligar (3) || Desligar (4)\n");
+            printf("********************************\n");
+            printf("********* Control LED  *********\n");
+            printf("*   1- Ligar                   *\n");
+            printf("*   2- Desligar                *\n");
+            printf("*   0- Quit                    *\n");
+            printf("********************************\n");
+            printf("********************************\n");
             pthread_mutex_lock(&mutex);
             scanf("%d", &send_data_stop_light_packet);
             pthread_mutex_unlock(&mutex);
+            if (send_data_stop_light_packet == 0)
+            {
+                firstMenu();
+            }
             system("clear");
             break;
         case 5:
@@ -462,7 +597,7 @@ int main(int argc, char const *argv[])
                                 printf("----------------------\n");
                             }
                             counter += 7;
-                            sprintf(bufWritLogSta, "%d , %d , %.2f, %.2f , %.1f, %d, %s", (int)iss, ldr_value, ldr_voltage, ldr_resistance, ldrLux, light_value, ctime(&timeStamp));
+                            sprintf(bufWritLogSta, "%d,%d,%.2f,%.2f,%.1f,%d,%s", (int)iss, ldr_value, ldr_voltage, ldr_resistance, ldrLux, light_value, ctime(&timeStamp));
                             write(logSamples, bufWritLogSta, strlen(bufWritLogSta));
                         }
                     }
@@ -481,10 +616,11 @@ int main(int argc, char const *argv[])
                             printf("Movement detected\n");
                             printf("----------------------\n");
                         }
-                        sprintf(bufWritLogSta, "%d , %d, %s", (int)iss, mov_value, ctime(&timeStamp));
+                        sprintf(bufWritLogSta, "%d,%d,%s", (int)iss, mov_value, ctime(&timeStamp));
                         write(logSamplesMov, bufWritLogSta, strlen(bufWritLogSta));
                     }
-                    if (dataPacket[0] == 5){
+                    if (dataPacket[0] == 5)
+                    {
                         char iss = dataPacket[1];
                         time_t timeStamp = 0;
                         memcpy(&timeStamp, dataPacket + 2, 4);
@@ -498,10 +634,9 @@ int main(int argc, char const *argv[])
                             printf("Error receveid:%c", errorCode);
                             printf("----------------------\n");
                         }
-                        sprintf(bufWritLogSta, "%d , %c, %s", (int)iss, errorCode, ctime(&timeStamp));
+                        sprintf(bufWritLogSta, "%d,%c,%s", (int)iss, errorCode, ctime(&timeStamp));
                         write(logError, bufWritLogSta, strlen(bufWritLogSta));
                     }
-
                 }
             }
         }
