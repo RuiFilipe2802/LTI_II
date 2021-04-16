@@ -130,7 +130,7 @@ void betweenDates(int num, int hour1, int min1, int day1, int month1, int year1,
     time_t result1 = 0;
     time_t result2 = 0;
 
-    const char *T;
+    /*const char *T;
     T = 
 
     sscanf(T, "%4d.%2d.%2d %2d:%2d", &year, &month, &day, &hour, &min
@@ -180,7 +180,23 @@ void betweenDates(int num, int hour1, int min1, int day1, int month1, int year1,
             char *temp = strdup(line);
             printf("%s\n", getFieldFromFile(temp, 3));
         }
+    }*/
+}
+
+void getLocations(int gps)
+{
+    FILE *clientsFile = fopen("logClients.csv", "r");
+    char buffer[256];
+    int counter = 0;
+    while (fgets(buffer, 256 - 1, clientsFile))
+    {
+        buffer[strcspn(buffer, "\n")] = 0;
+        printf("%s\n", buffer);
+        counter++;
     }
+    //printf("ISS %d encontra-se na posicao (%d,%d)",iss,x,y);
+    fclose(clientsFile);
+    sleep(3);
 }
 
 void firstMenu()
@@ -195,9 +211,10 @@ void firstMenu()
         printf("************ MENU  *************\n");
         printf("*   1- CONSULTAR LOGS          *\n");
         printf("*   2- CONSULTAR EM TEMPO REAL *\n");
-        printf("*   3- START/STOP              *\n");
-        printf("*   4- ACENDER/DESLIGAR LED    *\n");
-        printf("*   5- CONSULTAR POSIÇÃO ISS   *\n");
+        printf("*   3- CONSULTAR ENTRE DATAS   *\n");
+        printf("*   4- START/STOP              *\n");
+        printf("*   5- ACENDER/DESLIGAR LED    *\n");
+        printf("*   6- CONSULTAR POSIÇÃO ISS   *\n");
         printf("*   0- EXIT                    *\n");
         printf("********************************\n");
         printf("********************************\n");
@@ -284,6 +301,18 @@ void firstMenu()
             break;
         case 2:
             system("clear");
+            int opti = 0;
+            pthread_mutex_lock(&mutex);
+            real_time_watch = 1;
+            pthread_mutex_unlock(&mutex);
+            scanf("%d", &opti);
+            pthread_mutex_lock(&mutex);
+            real_time_watch = 0;
+            pthread_mutex_unlock(&mutex);
+            system("clear");
+            break;
+        case 3:
+            system("clear");
             printf("********************************\n");
             printf("*********** Consult  ***********\n");
             printf("*   1- Log Samples             *\n");
@@ -294,10 +323,6 @@ void firstMenu()
             int option;
             int hour1, hour2, minute1, minute2, day1, day2, month1, month2, year1, year2;
             scanf("%d", &option);
-            if (option == 0)
-            {
-                firstMenu();
-            }
             system("clear");
             printf("Input first date like shown ---> (hour minute day month year)\n");
             printf("EXAMPLE: 12 25 15 4 2021\n");
@@ -313,11 +338,9 @@ void firstMenu()
             {
                 betweenDates(2, hour1, minute1, day1, month1, year1, hour2, minute2, day2, month2, year2);
             }
-            pthread_mutex_lock(&mutex);
-            real_time_watch = 1;
-            pthread_mutex_unlock(&mutex);
+            system("clear");
             break;
-        case 3:
+        case 4:
             system("clear");
             printf("********************************\n");
             printf("********* Start/Stop  **********\n");
@@ -329,13 +352,9 @@ void firstMenu()
             pthread_mutex_lock(&mutex);
             scanf("%d", &send_data_stop_light_packet);
             pthread_mutex_unlock(&mutex);
-            if (send_data_stop_light_packet == 0)
-            {
-                firstMenu();
-            }
             system("clear");
             break;
-        case 4:
+        case 5:
             system("clear");
             printf("********************************\n");
             printf("********* Control LED  *********\n");
@@ -347,15 +366,19 @@ void firstMenu()
             pthread_mutex_lock(&mutex);
             scanf("%d", &send_data_stop_light_packet);
             pthread_mutex_unlock(&mutex);
-            if (send_data_stop_light_packet == 0)
-            {
-                firstMenu();
-            }
             system("clear");
             break;
-        case 5:
-            printf("Consultar (1) || Alterar (2)\n");
+        case 6:
+            system("clear");
+            printf("********************************\n");
+            printf("********* Control GPS **********\n");
+            printf("*   1- Consultar posições      *\n");
+            printf("*   2- Alterar posição         *\n");
+            printf("*   0- Quit                    *\n");
+            printf("********************************\n");
+            printf("********************************\n");
             scanf("%d", &gps);
+            getLocations(gps);
             system("clear");
             break;
         default:
