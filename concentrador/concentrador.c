@@ -186,17 +186,23 @@ void betweenDates(int num, int hour1, int min1, int day1, int month1, int year1,
 void getLocations(int gps)
 {
     FILE *clientsFile = fopen("logClients.csv", "r");
-    char buffer[256];
+    char buffer[15];
     int counter = 0;
     while (fgets(buffer, 256 - 1, clientsFile))
     {
-        buffer[strcspn(buffer, "\n")] = 0;
-        printf("%s\n", buffer);
         counter++;
+        int iss=0,x=0,y=0;
+        char place[15];
+        //buffer[strcspn(buffer, "\n")] = 0;
+        //printf("%s\n", buffer);
+        if(sscanf(buffer, "%d,%d,%d,%s", &iss, &x, &y,place) != 4)
+        {
+            continue;
+        }
+        printf("ISS %d encontra-se na posicao (%d,%d) no local: %s\n",iss,x,y,place);  
     }
     //printf("ISS %d encontra-se na posicao (%d,%d)",iss,x,y);
     fclose(clientsFile);
-    sleep(3);
 }
 
 void firstMenu()
@@ -379,6 +385,7 @@ void firstMenu()
             printf("********************************\n");
             scanf("%d", &gps);
             getLocations(gps);
+            scanf("%d",&gps);
             system("clear");
             break;
         default:
