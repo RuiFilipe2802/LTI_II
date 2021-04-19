@@ -16,9 +16,18 @@
 #include <math.h>
 
 int real_time_watch = 0;
-int send_data_stop_light_packet = 0;
+int send_data_stop_packet = 0;
+int send_light_packet = 0;
 int gps = 0;
 pthread_mutex_t mutex;
+
+struct position
+{
+    int iss;
+    int x;
+    int y;
+    char *place;
+};
 
 void print_bits(unsigned char x)
 {
@@ -185,21 +194,71 @@ void betweenDates(int num, int hour1, int min1, int day1, int month1, int year1,
 
 void getLocations(int gps)
 {
+    int logClients = open("logClients.csv", O_CREAT | O_RDWR, 0600);
     FILE *clientsFile = fopen("logClients.csv", "r");
     char buffer[15];
-    int counter = 0;
+    int structCounter = 0;
+    struct position positions[5];
     while (fgets(buffer, 256 - 1, clientsFile))
     {
-        counter++;
-        int iss=0,x=0,y=0;
-        char place[15];
-        //buffer[strcspn(buffer, "\n")] = 0;
-        //printf("%s\n", buffer);
-        if(sscanf(buffer, "%d,%d,%d,%s", &iss, &x, &y,place) != 4)
+        int iss = 0, x = 0, y = 0;
+        char *place = malloc(15);
+        if (sscanf(buffer, "%d,%d,%d,%s", &iss, &x, &y, place) != 4)
         {
             continue;
         }
-        printf("ISS %d encontra-se na posicao (%d,%d) no local: %s\n",iss,x,y,place);  
+        positions[structCounter].iss = iss;
+        positions[structCounter].x = x;
+        positions[structCounter].y = y;
+        positions[structCounter].place = place;
+        structCounter++;
+    }
+    if (gps == 1)
+    {
+        for (int i = 0; i < structCounter; i++)
+        {
+            printf("ISS %d encontra-se na posicao (%d,%d) no local: %s\n", positions[i].iss,
+                   positions[i].x, positions[i].y, positions[i].place);
+        }
+    }
+    int alter = 0;
+    int altx = 0;
+    int alty = 0;
+    char altplace[10];
+    if (gps == 2)
+    {
+        system("clear");
+        printf("********************************\n");
+        printf("********************************\n");
+        printf("*** ISS que pretende alterar ***\n");
+        for (int j = 0; j < structCounter; j++)
+        {
+            printf("*   %d                      *\n", positions[j].iss);
+        }
+        printf("********************************\n");
+        printf("********************************\n");
+        scanf("%d", &alter);
+        alter -= 1;
+        printf("Indique x,y e local do sistema sensor:\n");
+        printf("X:\n");
+        scanf("%d", &altx);
+        printf("Y:\n");
+        scanf("%d", &alty);
+        printf("Local:\n");
+        scanf("%s", altplace);
+        positions[alter].x = altx;
+        positions[alter].y = alty;
+        positions[alter].place = altplace;
+        for (int i = 0; i < structCounter; i++)
+        {
+            char bufWritLogSta[100];
+            printf("%d,%d,%d,%s\n",positions[i].iss, positions[i].x,
+                positions[i].y, positions[i].place);
+            sprintf(bufWritLogSta, "%d,%d,%d,%s\n",positions[i].iss, positions[i].x,
+                positions[i].y, positions[i].place);
+            write(logClients, bufWritLogSta, strlen(bufWritLogSta));
+            memset(bufWritLogSta,'\0',100);
+        }
     }
     //printf("ISS %d encontra-se na posicao (%d,%d)",iss,x,y);
     fclose(clientsFile);
@@ -356,7 +415,7 @@ void firstMenu()
             printf("********************************\n");
             printf("********************************\n");
             pthread_mutex_lock(&mutex);
-            scanf("%d", &send_data_stop_light_packet);
+            scanf("%d", &send_data_stop_packet);
             pthread_mutex_unlock(&mutex);
             system("clear");
             break;
@@ -370,7 +429,7 @@ void firstMenu()
             printf("********************************\n");
             printf("********************************\n");
             pthread_mutex_lock(&mutex);
-            scanf("%d", &send_data_stop_light_packet);
+            scanf("%d", &send_light_packet);
             pthread_mutex_unlock(&mutex);
             system("clear");
             break;
@@ -385,7 +444,7 @@ void firstMenu()
             printf("********************************\n");
             scanf("%d", &gps);
             getLocations(gps);
-            scanf("%d",&gps);
+            scanf("%d", &gps);
             system("clear");
             break;
         default:
@@ -513,11 +572,11 @@ int main(int argc, char const *argv[])
                 perror("accept");
                 exit(EXIT_FAILURE);
             }
-            if (send_data_stop_light_packet == 1)
+            if (send_data_stop_packet == 1)
             {
                 creatStartPacket(startPacket, sampleTime, sampleFreq);
                 send(new_socket, startPacket, sizeof(char) * 8, 0);
-                send_data_stop_light_packet = 0;
+                send_data_stop_packet = 0;
                 time(&timeStamp);
                 int logStateIni = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
                 sprintf(bufWritLogSta, "Started collecting from ISS: 1 at %s", ctime(&timeStamp));
@@ -525,12 +584,12 @@ int main(int argc, char const *argv[])
                 close(logStateIni);
             }
 
-            if (send_data_stop_light_packet == 2)
+            if (send_data_stop_packet == 2)
             {
                 creatStopPacket(stopPacket, 1, 'a');
                 send(new_socket, stopPacket, sizeof(char) * 7, 0);
                 printf("Stop enviado\n");
-                send_data_stop_light_packet = 0;
+                send_data_stop_packet = 0;
                 time(&timeStamp);
                 int logStateStop = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
                 sprintf(bufWritLogSta, "Stoped collecting from ISS: 1 at %s", ctime(&timeStamp));
@@ -538,27 +597,19 @@ int main(int argc, char const *argv[])
                 close(logStateStop);
             }
 
-            if (send_data_stop_light_packet == 3)
+            if (send_light_packet == 1)
             {
                 creatLightPacket(lightPacket, 1);
                 send(new_socket, lightPacket, sizeof(char) * 7, 0);
                 printf("LAMPADA ON\n");
-                send_data_stop_light_packet = 0;
+                send_light_packet = 0;
             }
-            if (send_data_stop_light_packet == 4)
+            if (send_light_packet == 2)
             {
                 creatLightPacket(lightPacket, 0);
                 send(new_socket, lightPacket, sizeof(char) * 7, 0);
                 printf("LAMPADA OFF\n");
-                send_data_stop_light_packet = 0;
-            }
-
-            if (gps == 1)
-            {
-            }
-
-            if (gps == 2)
-            {
+                send_light_packet = 0;
             }
 
             for (i = 0; i < max_clients; i++)
