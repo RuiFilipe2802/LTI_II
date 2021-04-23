@@ -29,6 +29,14 @@ struct position
     char *place;
 };
 
+struct date
+{
+    int month;
+    int day;
+    int hour;
+    int min;
+};
+
 void print_bits(unsigned char x)
 {
     int i;
@@ -134,62 +142,170 @@ void creatStopPacket(char *packet, int systemId, char stopReason)
     packet[6] = stopReason;
 }
 
-void betweenDates(int num, int hour1, int min1, int day1, int month1, int year1, int hour2, int min2, int day2, int month2, int year2)
+int monthn(const char *name)
+{
+    const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    int i = 0;
+    for (i = 0; i < sizeof(months) / sizeof(months[0]); i++)
+    {
+        if (strcmp(months[i], name) == 0)
+            return i;
+    }
+    return -1;
+}
+
+void betweenDates(int num, int hour1, int day1, int month1, int hour2, int day2, int month2)
 {
     time_t result1 = 0;
     time_t result2 = 0;
 
-    /*const char *T;
-    T = 
+    int dia = 0;
 
-    sscanf(T, "%4d.%2d.%2d %2d:%2d", &year, &month, &day, &hour, &min
+    struct date date1;
+    date1.month = month1;
+    date1.day = day1;
+    date1.hour = hour1;
 
-    struct tm firstdate = {0};
-    firstdate.tm_year = year1 - 1900;
-    firstdate.tm_mon = month1 - 1;
-    firstdate.tm_mday = day1;
-    firstdate.tm_hour = hour1;
-    firstdate.tm_min = min1;
-
-    struct tm secdate = {0};
-    firstdate.tm_year = year2 - 1900;
-    firstdate.tm_mon = month2 - 1;
-    firstdate.tm_mday = day2;
-    firstdate.tm_hour = hour2;
-    firstdate.tm_min = min2;
-
-    if ((result1 = mktime(&firstdate)) == (time_t)-1)
-    {
-        fprintf(stderr, "Could not convert time input to time_t\n");
-    }
-    if ((result2 = mktime(&secdate)) == (time_t)-1)
-    {
-        fprintf(stderr, "Could not convert time input to time_t\n");
-    }
-
-    puts(ctime(&result1));
-    puts(ctime(&result2));
+    struct date date2;
+    date2.month = month2;
+    date2.day = day2;
+    date2.hour = hour2;
 
     if (num == 1)
-    { // logSamples
+    {
+        struct date dates[100];
         FILE *stream = fopen("logSamples.csv", "r");
         char line[1024];
+        int increment = 0;
+        char buffer[50];
+
+        printf("**************************************************************\n");
+        printf("Amostras entre as %d do dia %d do mês %d até às %d do dia %d do mês %d\n", date1.hour, date1.day, date1.month, date1.hour, date2.day, date2.month);
+        printf("**************************************************************\n");
+
+        printf("ISS,ldr value,ldr voltage,ldr_resistance,ldrLux,light_value,timeStamp\n");
+
         while (fgets(line, 1024, stream))
         {
             char *temp = strdup(line);
-            printf("%s\n", getFieldFromFile(temp, 7));
+            strcpy(buffer, getFieldFromFile(temp, 7));
+            int diaFromFile = 0, ano = 0, hora = 0, minuto = 0, segundo = 0;
+            char *mesC = malloc(3);
+            char *diaC = malloc(3);
+            if (sscanf(buffer, "%s %s %d %d:%d:%d %d\n", diaC, mesC, &diaFromFile, &hora, &minuto, &segundo, &ano) != 7)
+            {
+                continue;
+            }
+
+            int nMonth = monthn(mesC) + 1;
+
+            dates[increment].month = nMonth;
+            dates[increment].day = diaFromFile;
+            dates[increment].hour = hora;
+            dates[increment].min = minuto;
+
+            if (dates[increment].month >= date1.month && dates[increment].month <= date2.month)
+            { // entre mes 4 e 7
+                if (dates[increment].day == date1.day && dates[increment].hour >= date1.hour && dates[increment].month == date1.month)
+                { // se dia 19 do mes 4, hora >=
+                    char *tempr = strdup(line);
+                    printf("%s", tempr);
+                }
+                if (dates[increment].day == date2.day && dates[increment].hour <= date2.hour && dates[increment].month == date2.month)
+                { // se dia 21 do mes 7, hora <=
+                    char *tempr = strdup(line);
+                    printf("%s", tempr);
+                }
+                if (dates[increment].month == date1.month && dates[increment].day > date1.day && date1.month != date2.month)
+                { // do mes 4, dia > 19
+                    char *tempr = strdup(line);
+                    printf("%s", tempr);
+                }
+
+                if (dates[increment].month == date2.month && dates[increment].day < date2.day && date1.month != date2.month)
+                { // do mes 7, dia < 21
+                    char *tempr = strdup(line);
+                    printf("%s", tempr);
+                }
+
+                if (dates[increment].month > date1.month && dates[increment].month < date2.month)
+                { // entre os meses
+                    char *tempr = strdup(line);
+                    printf("%s", tempr);
+                }
+            }
+            increment++;
+            memset(buffer, '\0', 50);
         }
     }
-    else if (num == 2)
-    { //logSamplesMov
+
+    if (num == 2)
+    {
+        struct date dates2[100];
         FILE *stream2 = fopen("logSamplesMov.csv", "r");
         char line[1024];
+        int increment = 0;
+        char buffer[50];
+
+        printf("**************************************************************\n");
+        printf("Amostras entre as %d do dia %d do mês %d até às %d do dia %d do mês %d\n", date1.hour, date1.day, date1.month, date1.hour, date2.day, date2.month);
+        printf("**************************************************************\n");
+
+        printf("ISS,mov value,timeStamp\n");
+
         while (fgets(line, 1024, stream2))
         {
             char *temp = strdup(line);
-            printf("%s\n", getFieldFromFile(temp, 3));
+            strcpy(buffer, getFieldFromFile(temp, 3));
+            int diaFromFile = 0, ano = 0, hora = 0, minuto = 0, segundo = 0;
+            char *mesC = malloc(3);
+            char *diaC = malloc(3);
+            if (sscanf(buffer, "%s %s %d %d:%d:%d %d\n", diaC, mesC, &diaFromFile, &hora, &minuto, &segundo, &ano) != 7)
+            {
+                continue;
+            }
+
+            int nMonth = monthn(mesC) + 1;
+
+            dates2[increment].month = nMonth;
+            dates2[increment].day = diaFromFile;
+            dates2[increment].hour = hora;
+            dates2[increment].min = minuto;
+
+            if (dates2[increment].month >= date1.month && dates2[increment].month <= date2.month)
+            { // entre mes 4 e 7
+                if (dates2[increment].day == date1.day && dates2[increment].hour >= date1.hour && dates2[increment].month == date1.month)
+                { // se dia 19 do mes 4, hora >=
+                    char *tempr = strdup(line);
+                    printf("%s", tempr);
+                }
+                if (dates2[increment].day == date2.day && dates2[increment].hour <= date2.hour && dates2[increment].month == date2.month)
+                { // se dia 21 do mes 7, hora <=
+                    char *tempr = strdup(line);
+                    printf("%s", tempr);
+                }
+                if (dates2[increment].month == date1.month && dates2[increment].day > date1.day && date1.month != date2.month)
+                { // do mes 4, dia > 19
+                    char *tempr = strdup(line);
+                    printf("%s", tempr);
+                }
+
+                if (dates2[increment].month == date2.month && dates2[increment].day < date2.day && date1.month != date2.month)
+                { // do mes 7, dia < 21
+                    char *tempr = strdup(line);
+                    printf("%s", tempr);
+                }
+
+                if (dates2[increment].month > date1.month && dates2[increment].month < date2.month)
+                { // entre os meses
+                    char *tempr = strdup(line);
+                    printf("%s", tempr);
+                }
+            }
+            increment++;
+            memset(buffer, '\0', 50);
         }
-    }*/
+    }
 }
 
 void getLocations(int gps)
@@ -252,12 +368,12 @@ void getLocations(int gps)
         for (int i = 0; i < structCounter; i++)
         {
             char bufWritLogSta[100];
-            printf("%d,%d,%d,%s\n",positions[i].iss, positions[i].x,
-                positions[i].y, positions[i].place);
-            sprintf(bufWritLogSta, "%d,%d,%d,%s\n",positions[i].iss, positions[i].x,
-                positions[i].y, positions[i].place);
+            printf("%d,%d,%d,%s\n", positions[i].iss, positions[i].x,
+                   positions[i].y, positions[i].place);
+            sprintf(bufWritLogSta, "%d,%d,%d,%s\n", positions[i].iss, positions[i].x,
+                    positions[i].y, positions[i].place);
             write(logClients, bufWritLogSta, strlen(bufWritLogSta));
-            memset(bufWritLogSta,'\0',100);
+            memset(bufWritLogSta, '\0', 100);
         }
     }
     //printf("ISS %d encontra-se na posicao (%d,%d)",iss,x,y);
@@ -386,23 +502,25 @@ void firstMenu()
             printf("********************************\n");
             printf("********************************\n");
             int option;
-            int hour1, hour2, minute1, minute2, day1, day2, month1, month2, year1, year2;
+            int hour1, hour2, day1, day2, month1, month2, year1, year2;
             scanf("%d", &option);
             system("clear");
-            printf("Input first date like shown ---> (hour minute day month year)\n");
-            printf("EXAMPLE: 12 25 15 4 2021\n");
-            scanf("%d %d %d %d %d", &hour1, &minute1, &day1, &month1, &year1);
-            printf("Input second date like shown ---> (hour minute day month year)\n");
-            printf("EXAMPLE: 15 25 15 4 2021\n");
-            scanf("%d %d %d %d %d", &hour2, &minute2, &day2, &month2, &year2);
+            printf("Input first date like shown ---> (hour day month year)\n");
+            printf("EXAMPLE: 15 15 4 2021\n");
+            scanf("%d %d %d %d", &hour1, &day1, &month1, &year1);
+            printf("Input second date like shown ---> (hour day month year)\n");
+            printf("EXAMPLE: 15 25 4 2021\n");
+            scanf("%d %d %d %d", &hour2, &day2, &month2, &year2);
             if (option == 1)
             {
-                betweenDates(1, hour1, minute1, day1, month1, year1, hour2, minute2, day2, month2, year2);
+                betweenDates(1, hour1, day1, month1, hour2, day2, month2);
             }
             else if (option == 2)
             {
-                betweenDates(2, hour1, minute1, day1, month1, year1, hour2, minute2, day2, month2, year2);
+                betweenDates(2, hour1, day1, month1, hour2, day2, month2);
             }
+            printf("\n\nPress any number to return\n");
+            scanf("%d", &option);
             system("clear");
             break;
         case 4:
