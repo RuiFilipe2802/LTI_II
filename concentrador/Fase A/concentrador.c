@@ -43,7 +43,6 @@ void print_bits(unsigned char x)
     {
         (x & (1 << i)) ? putchar('1') : putchar('0');
     }
-    //printf("\n");
 }
 
 void print_bitsT(u_int32_t x)
@@ -157,9 +156,9 @@ void betweenDates(int num, int hour1, int day1, int month1, int hour2, int day2,
         int increment = 0;
         char buffer[50];
 
-        printf("**************************************************************\n");
+        printf("**********************************************************************\n");
         printf("Amostras entre as %d do dia %d do mês %d até às %d do dia %d do mês %d\n", date1.hour, date1.day, date1.month, date2.hour, date2.day, date2.month);
-        printf("**************************************************************\n");
+        printf("**********************************************************************\n");
 
         printf("ISS,ldr value,ldr voltage,ldr_resistance,ldrLux,light_value,timeStamp\n");
 
@@ -227,9 +226,9 @@ void betweenDates(int num, int hour1, int day1, int month1, int hour2, int day2,
         int increment = 0;
         char buffer[50];
 
-        printf("**************************************************************\n");
+        printf("**********************************************************************\n");
         printf("Amostras entre as %d do dia %d do mês %d até às %d do dia %d do mês %d\n", date1.hour, date1.day, date1.month, date2.hour, date2.day, date2.month);
-        printf("**************************************************************\n");
+        printf("**********************************************************************\n");
 
         printf("ISS,mov value,timeStamp\n");
 
@@ -326,28 +325,29 @@ void getLocations(int gps)
     char altplace[10];
     if (gps == 2)
     {
-        system("clear");
-        printf("********************************\n");
-        printf("********************************\n");
-        printf("*** ISS que pretende alterar ***\n");
-        printf("***                          ***\n");
-        for (int j = 0; j < structCounter; j++)
+        do
         {
-            printf("*** %d - %s              ***\n", positions[j].iss, positions[j].place);
-        }
-        printf("***                          ***\n");
-        printf("********************************\n");
-        printf("********************************\n");
-        scanf("%d", &alter);
+            system("clear");
+            printf("********************************\n");
+            printf("********************************\n");
+            printf("*** ISS que pretende alterar ***\n");
+            printf("***                          ***\n");
+            for (int j = 0; j < structCounter; j++)
+            {
+                printf("*** %d - %s              ***\n", positions[j].iss, positions[j].place);
+            }
+            printf("***                          ***\n");
+            printf("********************************\n");
+            printf("********************************\n");
+            scanf("%d", &alter);
+        } while (alter < 1 || alter > structCounter);
         alter -= 1;
         printf("Indique x,y e local do sistema sensor:\n");
         printf("X: ");
         scanf("%d", &altx);
-        printf("\n");
         printf("Y: ");
         scanf("%d", &alty);
-        printf("\n");
-        printf("Local:\n");
+        printf("Local:");
         scanf("%s", altplace);
         positions[alter].x = altx;
         positions[alter].y = alty;
@@ -495,6 +495,7 @@ void firstMenu()
             printf("Insira a segunda data ---> (hora dia mês ano)\n");
             printf("EXEMPLO: 15 25 4 2021\n");
             scanf("%d %d %d %d", &hour2, &day2, &month2, &year2);
+            system("clear");
             if (option == 1)
             {
                 betweenDates(1, hour1, day1, month1, hour2, day2, month2);
@@ -570,12 +571,10 @@ int main(int argc, char const *argv[])
     char startPacket[8];
     char lightPacket[7];
     char stopPacket[7];
-    char *errorPacket;
     char dataPacket[512];
     int port;
     int sampleTime;
     int sampleFreq;
-    char *typeCom;
     int logClients = open("logClients.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
     int logError = open("logError.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
     int logSamples = open("logSamples.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
@@ -583,8 +582,8 @@ int main(int argc, char const *argv[])
     int logState = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
 
     int opt = 1;
-    int socket_pc_esp, addrlen, new_socket, client_socket[30],
-        max_clients = 30, activity, i, valread, sd;
+    int socket_pc_esp, addrlen, new_socket, socket_iss[30],
+        maxISS = 30, activity, i, valread, sd;
     int max_sd;
     struct sockaddr_in address;
     getConfigFile(&port, &sampleTime, &sampleFreq);
@@ -605,9 +604,9 @@ int main(int argc, char const *argv[])
 
     fd_set readfds;
 
-    for (i = 0; i < max_clients; i++)
+    for (i = 0; i < maxISS; i++)
     {
-        client_socket[i] = 0;
+        socket_iss[i] = 0;
     }
 
     if ((socket_pc_esp = socket(AF_INET, SOCK_STREAM, 0)) == 0)
@@ -649,9 +648,9 @@ int main(int argc, char const *argv[])
 
         max_sd = socket_pc_esp;
 
-        for (i = 0; i < max_clients; i++)
+        for (i = 0; i < maxISS; i++)
         {
-            sd = client_socket[i];
+            sd = socket_iss[i];
 
             if (sd > 0)
                 FD_SET(sd, &readfds);
@@ -705,29 +704,27 @@ int main(int argc, char const *argv[])
                 creatLightPacket(lightPacket, 1);
                 send(new_socket, lightPacket, sizeof(char) * 7, 0);
                 printf("LAMPADA ON\n");
-                send_light_packet = 0;
             }
             if (send_light_packet == 2)
             {
                 creatLightPacket(lightPacket, 0);
                 send(new_socket, lightPacket, sizeof(char) * 7, 0);
                 printf("LAMPADA OFF\n");
-                send_light_packet = 0;
             }
 
-            for (i = 0; i < max_clients; i++)
+            for (i = 0; i < maxISS; i++)
             {
 
-                if (client_socket[i] == 0)
+                if (socket_iss[i] == 0)
                 {
-                    client_socket[i] = new_socket;
+                    socket_iss[i] = new_socket;
                     break;
                 }
             }
         }
-        for (i = 0; i < max_clients; i++)
+        for (i = 0; i < maxISS; i++)
         {
-            sd = client_socket[i];
+            sd = socket_iss[i];
 
             if (FD_ISSET(sd, &readfds))
             {
@@ -736,7 +733,7 @@ int main(int argc, char const *argv[])
                     getpeername(sd, (struct sockaddr *)&address,
                                 (socklen_t *)&addrlen);
                     close(sd);
-                    client_socket[i] = 0;
+                    socket_iss[i] = 0;
                 }
                 else
                 {
@@ -818,6 +815,9 @@ int main(int argc, char const *argv[])
                         printf("----------------------\n");
                         sprintf(bufWritLogSta, "%d,%d,%s", (int)iss, errorCode, ctime(&timeStamp));
                         write(logError, bufWritLogSta, strlen(bufWritLogSta));
+                    }
+                    if(dataPacket[0] == 6){
+                        send_light_packet = 0;
                     }
                 }
             }
