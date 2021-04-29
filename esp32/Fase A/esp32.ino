@@ -86,7 +86,7 @@ void setup() {
 void loop() {
   String packetRec;
   if (!client.connect(host, port)) {
-    Serial.println("Ligação com o server falhou");
+    Serial.println("Ligação com o concentrador falhou");
     delay(1000);
     return;
   }
@@ -133,6 +133,8 @@ void loop() {
           break;
         case 4:    // LIGHT
           getLight(packetRec);
+          client.write(6);
+          client.stop();
           printf("LIGHT PACKET\n");
           break;
       }
@@ -145,8 +147,6 @@ void samplesMov() {
   movPacket[6] = 1;
   client.write(movPacket, sizeof(movPacket));
   client.stop();
-  //Serial.println("Motion stopped...");
-  //Serial.println("~~~~~~~~~~~~~~~~~~~~~");
   digitalWrite(led, LOW);
   startTimer = false;
 }
@@ -162,7 +162,6 @@ long getTime() {
     timeClient.forceUpdate();
   }
   time_t epcohTime = timeClient.getEpochTime();
-  //Serial.println(ctime(&epcohTime));
   return epcohTime;
 }
 
@@ -171,7 +170,6 @@ void getStart(String startPacket) {
   char timeStamp[4];
   for (int j = 0; j < 4; j++) {
     timeStamp[j] = startPacket[j + 2];
-    //Serial.println(timeStamp[j], BIN);
   }
   memcpy(&curTime, timeStamp, 4);
   sampleTime = (int)(startPacket[6]);
@@ -193,10 +191,8 @@ void getStop(String startPacket) {
   char timeStamp[4];
   for (int j = 0; j < 4; j++) {
     timeStamp[j] = startPacket[j + 2];
-    //Serial.println(timeStamp[j], BIN);
   }
   memcpy(&curTime, timeStamp, 4);
-  //Serial.println(ctime(&curTime));
   startCollecting = false;
 }
 
@@ -205,7 +201,6 @@ void getLight(String lightPacket) {
   char timeStamp[4];
   for (int j = 0; j < 4; j++) {
     timeStamp[j] = lightPacket[j + 2];
-    //Serial.println(timeStamp[j], BIN);
   }
   memcpy(&curTime, timeStamp, 4);
   Serial.println(ctime(&curTime));
