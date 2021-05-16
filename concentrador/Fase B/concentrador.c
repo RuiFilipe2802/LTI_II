@@ -15,6 +15,7 @@
 #include <pthread.h>
 #include <math.h>
 
+int LOCAL = 1;
 int real_time_watch = 0;
 int send_data_stop_packet = 0;
 int send_light_packet = 0;
@@ -24,6 +25,10 @@ int tt = 0;
 int sockfd2 = 0;
 pthread_mutex_t mutex;
 pthread_mutex_t mute2;
+pthread_mutex_t mute3;
+pthread_mutex_t mute4;
+int newData=1;
+int newDataMov=1;
 
 struct position
 {
@@ -569,7 +574,7 @@ void firstMenu()
     } while (op != 0);
 }
 
-void start_stop(int tipo, int local, char password[4])
+void start_stop(int tipo, int local, int password[4])
 {
     char startPacote[6];
     startPacote[0] = (char)tipo;
@@ -580,19 +585,23 @@ void start_stop(int tipo, int local, char password[4])
         print_bits(startPacote[y]);
         printf("\n");
     }*/
-
     send(sockfd2, startPacote, sizeof(startPacote), 0);
 }
 
-void send_dataLDR(int tipo, int local, char password[4])
+void send_dataLDR(int tipo, int local, int password[4])
 {
     char pacoteLDR[2715]; // 9*300 + 15 = 2415 (~300 amostras MAX)
     FILE *clientsFile = fopen("logClients.csv", "r");
     char linha[100], line[100];
+    password[0] = (char)1;
+    password[1] = (char)2;
+    password[2] = (char)3;
+    password[3] = (char)4;
     char chr;
     int inc = 0;
-    int counterISS = 1;
+    int counterISS = 0;
     int apontador = 0;
+
     chr = getc(clientsFile);
     while (chr != EOF)
     {
@@ -609,7 +618,10 @@ void send_dataLDR(int tipo, int local, char password[4])
     // Construção do header
     pacoteLDR[0] = (char)tipo;
     pacoteLDR[1] = (char)local;
-    memcpy(pacoteLDR + 2, &password, 4);
+    pacoteLDR[2] = (char)password[0];
+    pacoteLDR[3] = (char)password[1];
+    pacoteLDR[4] = (char)password[2];
+    pacoteLDR[5] = (char)password[3];
     pacoteLDR[6] = (char)counterISS;
 
     while (fgets(line, sizeof(line), clients) != NULL)
@@ -623,10 +635,11 @@ void send_dataLDR(int tipo, int local, char password[4])
     }
 
     fclose(clients);
-    FILE *fileCounter = fopen("logTestLDR.csv", "r");
+    pthread_mutex_lock(&mute4);
+    FILE *fileCounter = fopen("logSamples.csv", "r");
     char search;
     search = getc(fileCounter);
-    int counterLDR = 1;
+    int counterLDR = 0;
 
     while (search != EOF)
     {
@@ -638,6 +651,7 @@ void send_dataLDR(int tipo, int local, char password[4])
     }
 
     fclose(fileCounter);
+    pthread_mutex_unlock(&mute4);
     apontador = 7 + counterISS * 3;
     memcpy(pacoteLDR + apontador, &counterLDR, 1);
     apontador += 1;
@@ -645,7 +659,8 @@ void send_dataLDR(int tipo, int local, char password[4])
     char amostras[2700];
     memset(amostras, 0, 2700);
     int n = 0;
-    FILE *file = fopen("logTestLDR.csv", "r");
+    pthread_mutex_lock(&mute4);
+    FILE *file = fopen("logSamples.csv", "r");
 
     while (fgets(linha, sizeof(linha), file) != NULL)
     {
@@ -674,24 +689,22 @@ void send_dataLDR(int tipo, int local, char password[4])
     }
     memcpy(pacoteLDR + apontador, &amostras, 2700);
     fclose(file);
-
-    /*for (int t = 0; t < 100; t++)
-    {
-        print_bits(pacoteLDR[t]);
-        printf("\n");
-    }*/
+    pthread_mutex_unlock(&mute4);
 
     send(sockfd2, pacoteLDR, sizeof(pacoteLDR), 0);
 
     // PARA DEPOIS APAGAR O FICHEIRO
-    //FILE *closeFile = fopen("logTestLDR.csv","w");
-    //fflush(closeFile);
+    pthread_mutex_lock(&mute4);
+    FILE *closeFile = fopen("logSamples.csv","w");
+    fflush(closeFile);
+    fclose(closeFile);
+    pthread_mutex_unlock(&mute4);
 }
-void send_dataMOV(int tipo, int local, char password[4])
+
+void send_dataMOV(int tipo, int local, int password[4])
 {
-    char pacoteMOV[1256]; // 5*250 + 6 = 1256 (250 amostras MAX)
-    memset(pacoteMOV, 0, 1256);
-    FILE *file = fopen("logTestMOV.csv", "r");
+    char pacoteMOV[2506]; // 5*500 + 6 = 1256 (250 amostras MAX)
+    memset(pacoteMOV, 0, 2506);
     int c;
     char linha[100];
     int iss, state, dia, hora, min, seg, ano;
@@ -700,16 +713,40 @@ void send_dataMOV(int tipo, int local, char password[4])
     // Construção do header
     pacoteMOV[0] = (char)tipo;
     pacoteMOV[1] = (char)local;
-    memcpy(pacoteMOV + 2, &password, 4);
+    pacoteMOV[2] = (char)password[0];
+    pacoteMOV[3] = (char)password[1];
+    pacoteMOV[4] = (char)password[2];
+    pacoteMOV[5] = (char)password[3];
 
-    char amostras[2700];
-    memset(amostras, 0, 2700);
+    pthread_mutex_lock(&mute4);
+    FILE *fileCounter = fopen("logSamplesMov.csv","r");
+    char search;
+    search = getc(fileCounter);
+    int counterMOV = 0;
+
+    while (search != EOF)
+    {
+        if (search == '\n')
+        {
+            counterMOV = counterMOV + 1;
+        }
+        search = getc(fileCounter);
+    }
+
+    fclose(fileCounter);
+    pthread_mutex_unlock(&mute4);
+    pthread_mutex_lock(&mute4);
+    FILE *file = fopen("logSamplesMov.csv", "r");
+    memcpy(pacoteMOV + 6, &counterMOV, 1);
+
+    char amostras[2500];
+    memset(amostras, 0, 2500);
     int n = 0;
     while (fgets(linha, sizeof(linha), file) != NULL)
     {
         time_t rawtime;
         char buffer[80];
-        sscanf(linha, "%d,%d,%s %s %d %d:%d:%d %d", &iss, &state, dayStr, monStr, &dia, &hora, &min, &seg, &ano);
+        sscanf(linha, "%d,%d,%s %s %d %d:%d:%d %d", &iss,&state,dayStr,monStr, &dia, &hora, &min, &seg, &ano);
         //printf("%s %s %d %d:%d:%d %d\n", dayStr, monStr, dia, hora, min, seg, ano);
         int month = monthn(monStr);
         struct tm timeS;
@@ -723,41 +760,41 @@ void send_dataMOV(int tipo, int local, char password[4])
         memcpy(amostras + n, &iss, 1);
         memcpy(amostras + n + 1, &rawtime, 4);
         n += 5;
-        //sleep(1);
     }
-    memcpy(pacoteMOV + 6, &amostras, 1250);
+    memcpy(pacoteMOV + 7, &amostras, 2500);
     fclose(file);
+    pthread_mutex_unlock(&mute4);
 
-    //SEND
+    send(sockfd2,pacoteMOV,sizeof(pacoteMOV),0);
 
     // PARA DEPOIS APAGAR O FICHEIRO
-    //FILE *closeFile = fopen("logTestMOV.csv","w");
-    //fflush(closeFile);
+    pthread_mutex_lock(&mute4);
+    FILE *closeFile = fopen("logSamplesMov.csv","w");
+    fflush(closeFile);
+    fclose(closeFile);
+    pthread_mutex_unlock(&mute4);
 }
 
-void send_error(int tipo, int local, char password[4], int errorType)
+void send_error(int tipo, int local, int password[4], int errorType)
 {
     char errorPacote[7];
     errorPacote[0] = (char)tipo;
     errorPacote[1] = (char)local;
     memcpy(errorPacote + 2, &password, 4);
     errorPacote[6] = (char)errorType;
-    for (int y = 0; y < 7; y++)
+    /*for (int y = 0; y < 7; y++)
     {
         print_bits(errorPacote[y]);
         printf("\n");
-    }
-
-    //send();
+    }*/
+    send(sockfd2,errorPacote,sizeof(errorPacote),0);
 }
 
 void sistemaCentral()
 {
     struct sockaddr_in servaddr;
-    char buffer[30] = "ola do Cliente";
     char startp[7];
 
-    // socket create and varification
     sockfd2 = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd2 == -1)
     {
@@ -765,91 +802,85 @@ void sistemaCentral()
         exit(0);
     }
 
-    // Put the socket in non-blocking mode:
     if (fcntl(sockfd2, F_SETFL, fcntl(sockfd2, F_GETFL) | O_NONBLOCK) < 0)
     {
-        // handle error
+        printf("fcntl error:");
+        exit(0);
     }
 
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr("192.168.204.134");
+    servaddr.sin_addr.s_addr = inet_addr("192.168.1.119");
     servaddr.sin_port = htons(7778);
 
-    char password[4] = "1234";
-    /*printf("\nSTART\n\n"); // START    -> 00 (0)
-    start_stop(0, 1, password);
-    printf("\nSTOP\n\n"); // STOP     -> 01 (1)
-    start_stop(1, 1, password);
-    printf("\nDATA LDR\n\n"); // DATA LDR -> 10 (2)
-    send_dataLDR(2, 1, password);
-    printf("\nDATA MOV\n\n"); // DATA MOV -> 11 (3)
-    send_dataMOV(3, 1, password);
-    printf("\nDATA MOV\n\n"); // ERROR    -> 100 (4)
-    send_error(4, 1, password, 1);
-    //send_dataMOV();*/
-    int a = 1;
+    int password[4] = {1,2,3,4};
+
+    int choice = 1;
     while (connect(sockfd2, (struct sockaddr *)&servaddr, sizeof(servaddr)) != 0)
         ;
     while (1)
     {
-        //sleep(1);
-        if (a == 1)
+        if (choice == 0 || choice == 1 && newData == 1)         // START
         {
-            start_stop(5, 1, password);
-            /*for (size_t i = 0; i < 6; i++)
-            {
-                print_bits(startp[i]);
-                printf("\n");
-            }*/
+            start_stop(5, LOCAL, password);
+            pthread_mutex_lock(&mute3);
+            pthread_mutex_unlock(&mute3);
         }
-        if (a == 2)
+        if (choice == 2)                                        // STOP
         {
-            start_stop(1, 1, password);
+            start_stop(1, LOCAL, password);
         }
 
-        if (a == 3)
+        if (choice == 3 && newData == 1)                        // DATA LDR
         {
-            //printf("ESTOU AQUI\n");
-            send_dataLDR(2, 1, password);
-            a = 2;
-            //send_dataMOV(3, 1, password);
+            send_dataLDR(2, LOCAL, password);
+            pthread_mutex_lock(&mute3);
+            newData = 0;
+            pthread_mutex_unlock(&mute3);
+            choice = 2;
         }
-        if (a == 4)
+
+        if (choice == 3 && newDataMov == 2)                     // DATA MOV
         {
-            send_error(4, 1, password, 1);
+            send_dataMOV(3, LOCAL, password);
+            pthread_mutex_lock(&mute3);
+            newDataMov = 0;
+            pthread_mutex_unlock(&mute3);
+            choice = 2;
+        }
+        if (choice == 4)                                        // ERROR
+        {
+            send_error(4, LOCAL, password, 1);
+            //choice = 0;
         }
 
         char buf[1024];
         int len = read(sockfd2, buf, 3);
-        int x = 0;
+        int x;
         if (len > 0)
         {
-            if (buf[0] == 1)
+            if (buf[0] == 1)                // ACK 
             {
-                if (buf[2] == 1)
+                if (buf[2] == 1)            // ACK START
                 {
                     x = 1;
-                    //printf("Recebido ACK Start\n;");
                     if (x == 1)
                     {
-                        a = 3;
+                        choice = 3;
                     }
                     x + 1;
                 }
-                if (buf[2] == 2)
+                if (buf[2] == 2)            // ACK STOP
                 {
-                    //printf("STOP\n");
-                    a = 0;
+                    choice = 0;
                 }
             }
 
-            if (buf[0] == 2)
+            if (buf[0] == 2)            // END ??
             {
-                printf("Parar de enviar\n");
-                a = 0;
+                //printf("Parar de enviar\n");
+                choice = 0;
             }
-            //printf("Recebido:%s\n", buf);
         }
     }
 }
@@ -895,6 +926,11 @@ int main(int argc, char const *argv[])
     write(logState, bufWritLogSta, strlen(bufWritLogSta));
     close(logState);
 
+    printf("ID: \n");
+    scanf("%d",&LOCAL);
+    printf("\nPORTA: \n");
+    scanf("%d",&port);
+
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
     {
         perror("socket creation failed");
@@ -903,7 +939,8 @@ int main(int argc, char const *argv[])
 
     memset(&servaddr, 0, sizeof(servaddr));
     memset(&cliaddr, 0, sizeof(cliaddr));
-    servaddr.sin_family = AF_INET; // IPv4
+    
+    servaddr.sin_family = AF_INET; 
     servaddr.sin_addr.s_addr = INADDR_ANY;
     servaddr.sin_port = htons(port);
 
@@ -915,19 +952,16 @@ int main(int argc, char const *argv[])
     setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (char *)&options, sizeof(options));
 
     pthread_t threadN[2];
-    //pthread_mutex_init(&mutex, NULL);
     if (pthread_create(&(threadN[0]), NULL, threadFunction, NULL) != 0)
     {
         return 1;
     }
 
-    //pthread_mutex_init(&mutex, NULL);
     if (pthread_create(&(threadN[1]), NULL, threadSistemaCentral, NULL) != 0)
     {
         return 1;
     }
 
-    // Bind the socket with the server address
     if (bind(sockfd, (const struct sockaddr *)&servaddr,
              sizeof(servaddr)) < 0)
     {
@@ -937,7 +971,7 @@ int main(int argc, char const *argv[])
 
     int len, n;
 
-    len = sizeof(cliaddr); //len is value/resuslt
+    len = sizeof(cliaddr); 
 
     while (1)
     {
@@ -951,11 +985,9 @@ int main(int argc, char const *argv[])
                    len);
             time(&timeStamp);
             int logStateIni = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
-            sprintf(bufWritLogSta, "Started collecting from ISS: 1 at %s", ctime(&timeStamp));
+            sprintf(bufWritLogSta, "Started collecting from ISS: %d at %s",isss, ctime(&timeStamp));
             write(logStateIni, bufWritLogSta, strlen(bufWritLogSta));
             close(logStateIni);
-
-            //send_data_stop_packet = 0;
         }
 
         if (send_data_stop_packet == 2)
@@ -965,13 +997,11 @@ int main(int argc, char const *argv[])
             sendto(sockfd, (const char *)stopPacket, 8,
                    MSG_CONFIRM, (const struct sockaddr *)&cliaddr,
                    len);
-            //printf("Stop enviado\n");
             time(&timeStamp);
             int logStateStop = open("logState.csv", O_CREAT | O_RDWR | O_APPEND, 0600);
-            sprintf(bufWritLogSta, "Stoped collecting from ISS: 1 at %s", ctime(&timeStamp));
+            sprintf(bufWritLogSta, "Stoped collecting from ISS: %d at %s",isss, ctime(&timeStamp));
             write(logStateStop, bufWritLogSta, strlen(bufWritLogSta));
             close(logStateStop);
-            //send_data_stop_packet = 0;
         }
 
         if (send_light_packet == 1)
@@ -981,8 +1011,6 @@ int main(int argc, char const *argv[])
             sendto(sockfd, (const char *)lightPacket, 7,
                    MSG_CONFIRM, (const struct sockaddr *)&cliaddr,
                    len);
-            //printf("LAMPADA ON\n");
-            //send_light_packet = 0;
         }
 
         if (send_light_packet == 2)
@@ -992,8 +1020,6 @@ int main(int argc, char const *argv[])
             sendto(sockfd, (const char *)lightPacket, 7,
                    MSG_CONFIRM, (const struct sockaddr *)&cliaddr,
                    len);
-            //printf("LAMPADA OFF\n");
-            //send_light_packet  = 0;
         }
 
         if (n = recvfrom(sockfd, (char *)dataPacket, 512,
@@ -1003,7 +1029,6 @@ int main(int argc, char const *argv[])
 
             if (dataPacket[0] == 2)
             {
-
                 char iss = dataPacket[1];
                 time_t timeStamp = 0;
                 memcpy(&timeStamp, dataPacket + 2, 4);
@@ -1045,9 +1070,12 @@ int main(int argc, char const *argv[])
                         printf("----------------------\n");
                     }
                     counter += 7;
-                    sprintf(bufWritLogSta, "%d,%d,%.2f,%.2f,%.1f,%d,%s", (int)iss, ldr_value, ldr_voltage, ldr_resistance, ldrLux, light_value, ctime(&timeStamp));
+                    sprintf(bufWritLogSta,"%d,%d,%.2f,%.2f,%.1f,%d,%s", (int)iss, ldr_value, ldr_voltage, ldr_resistance, ldrLux, light_value, ctime(&timeStamp));
                     write(logSamples, bufWritLogSta, strlen(bufWritLogSta));
                 }
+                pthread_mutex_lock(&mute3);
+                newData = 1;
+                pthread_mutex_unlock(&mute3);
             }
 
             if (dataPacket[0] == 3)
@@ -1066,6 +1094,9 @@ int main(int argc, char const *argv[])
                 }
                 sprintf(bufWritLogSta, "%d,%d,%s", (int)iss, mov_value, ctime(&timeStamp));
                 write(logSamplesMov, bufWritLogSta, strlen(bufWritLogSta));
+                pthread_mutex_lock(&mute3);
+                newDataMov = 2;
+                pthread_mutex_unlock(&mute3);
             }
 
             if (dataPacket[0] == 5)
