@@ -10,19 +10,17 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
-#include <arpa/inet.h> //close
-#include <sys/time.h>  //FD_SET, FD_ISSET, FD_ZERO macros
+#include <arpa/inet.h>
+#include <sys/time.h>
 #include <pthread.h>
 #include <string.h>
 
 #define SA struct sockaddr
 #define MAXLINE 512
-#define SERV_PORT 7777
-#define host "192.168.204.134"
-//#define ISS 2
+#define host "192.168.1.119"
 #define DATAPACKETEMPTY 6
 
-
+int SERV_PORT = 0;
 int ISS;
 char recvline[MAXLINE];
 int sockfd;
@@ -39,7 +37,7 @@ typedef enum
 } boolean;
 
 boolean startCollecting = false;
-boolean tuaPrima = false;
+boolean randomOne = false;
 
 void print_bitsT(unsigned char x)
 {
@@ -78,7 +76,7 @@ void createSocket()
         perror("socket:");
         exit(1);
     }
-    printf("Socket created.\n");
+    printf("Socket criada com sucesso.\n");
 
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
@@ -150,7 +148,7 @@ char *getLine(int lineNum)
 
 void getStart(char startPacket[8])
 {
-    printf("Trama Start recebida\n");
+    //printf("Trama Start recebida\n");
     time_t curTime = 0;
     char timeStamp[4];
     for (int j = 0; j < 4; j++)
@@ -161,7 +159,7 @@ void getStart(char startPacket[8])
     sampleTime = (int)(startPacket[6]);
     sampleFreq = (int)(startPacket[7]);
     startCollecting = true;
-    printf("%d\n", sampleTime / sampleFreq);
+    //printf("%d\n", sampleTime / sampleFreq);
     if (sampleTime / sampleFreq > 72)
     {
         startCollecting = false;
@@ -196,12 +194,11 @@ int main(int argc, char const *argv[])
     int lineNum = 0;
     time_t firstTimerMov = time(NULL);
     time_t firstTimerLDR = time(NULL);
-    printf("%s", ctime(&firstTimerMov));
+    //printf("%s", ctime(&firstTimerMov));
     time_t lastTimerMov, lastTimerLDR;
-    createSocket();
+
     char packetRec[512];
     char packetACK[3];
-    char hello[50] = "HELLO";
     int randNumber = 0;
     int contador = 0;
     int nSamples = 0;
@@ -209,8 +206,13 @@ int main(int argc, char const *argv[])
     int lineCounter = 1;
     char c;
 
-    printf("\nISS: ");
-    scanf("%d",&ISS);
+    printf("\nISS: \n");
+    scanf("%d", &ISS);
+
+    printf("PORT: \n");
+    scanf("%d", &SERV_PORT);
+    createSocket();
+
     for (c = getc(fp); c != EOF; c = getc(fp))
     {
         if (c == '\n')
@@ -235,18 +237,18 @@ int main(int argc, char const *argv[])
             switch (packetRec[0])
             {
             case 0: // START
-                printf("START PACKET\n");
+                //printf("START PACKET\n");
                 getStart(packetRec);
                 createACK(packetACK, 6, 1);
                 sendData(sockfd, (SA *)&servaddr, sizeof(servaddr), packetACK);
-                printf("Confirmação enviada\n");
+                //printf("Confirmação enviada\n");
                 break;
             case 1: // STOP
                 getStop(packetRec);
-                printf("STOP PACKET\n");
+                //printf("STOP PACKET\n");
                 createACK(packetACK, 6, 2);
                 sendData(sockfd, (SA *)&servaddr, sizeof(servaddr), packetACK);
-                printf("Confirmação enviada\n");
+                //printf("Confirmação enviada\n");
                 break;
             default:
                 printf("DEFAULT");
@@ -256,23 +258,22 @@ int main(int argc, char const *argv[])
         if (startCollecting == true)
         {
             lastTimerMov = time(NULL);
-            if(tuaPrima == false){
+            if (randomOne == false)
+            {
                 randNumber = rand() % 10 + 1;
-                tuaPrima = true;
+                randomOne = true;
             }
             if (lastTimerMov - firstTimerMov > randNumber)
             {
                 createDATA(movPacket, 3);
                 movPacket[6] = 1;
-                printf("\n^^^^^^^^^^^^\nMov Packet\n^^^^^^^^^^^^\n");
+                //printf("\n^^^^^^^^^^^^\nMov Packet\n^^^^^^^^^^^^\n");
                 sendData(sockfd, (SA *)&servaddr, sizeof(servaddr), movPacket);
                 firstTimerMov = time(NULL);
-                tuaPrima = false;
+                randomOne = false;
             }
-
             char *linha;
             lastTimerLDR = time(NULL);
-
             if (lastTimerLDR - firstTimerLDR >= sampleTime)
             {
                 int counter = 0;
@@ -289,15 +290,14 @@ int main(int argc, char const *argv[])
                         lineNum = 0;
                     }
                 }
-                for (int k = 0; k < 30; k++)
+                /*for (int k = 0; k < 30; k++)
                 {
                     print_bitsT(dataPacket[k]);
-                }
+                }*/
                 sendto(sockfd, (const char *)dataPacket, 512,
-                    MSG_CONFIRM, (const struct sockaddr *)&servaddr,
-                    sizeof(servaddr));
-                printf("*********\n***********\n***********\n");
-
+                       MSG_CONFIRM, (const struct sockaddr *)&servaddr,
+                       sizeof(servaddr));
+                //printf("*********\n***********\n***********\n");
                 firstTimerLDR = time(NULL);
             }
         }
